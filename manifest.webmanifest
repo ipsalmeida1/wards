@@ -1,0 +1,14 @@
+{
+  "name": "Wards",
+  "short_name": "Wards",
+  "description": "Registro offline de admissão e evolução de pacientes em rounds.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#efdfcf",
+  "theme_color": "#efdfcf",
+  "icons": [
+    { "src": "icons/icon.svg", "type": "image/svg+xml", "sizes": "any" }
+  ]
+}

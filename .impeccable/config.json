@@ -1,0 +1,23 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-09-09T00:03:17.501Z",
+        "reason": "Deliberate choice, not a default: Inter Variable is the explicit substitute font named by both getdesign.md/superhuman and getdesign.md/shopify DESIGN.md specs this project's palette was adapted from; user's own requests in this session scoped changes to color only ('o pedido foi só de cor'), never asked to change typography"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "css/app.css"
+        ],
+        "createdAt": "2026-09-12T02:30:04.670Z",
+        "reason": "Agent: .dlg-toast border-left is a functional severity indicator (default/erro/sucesso recolor it), not a decorative card accent — app has no icon system to convey toast type otherwise; narrowed to 3px in response to this finding"
+      }
+    ]
+  }
+}

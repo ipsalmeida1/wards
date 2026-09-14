@@ -1,0 +1,300 @@
+/* Paleta a partir de coolors.co/efdfcf-736d57-354f44-b5783f-2e2b25: Almond
+   Cream de fundo, Dark Slate Grey e Ebony como os dois tons de detalhe —
+   Copper e Graphite ficam de fora por pedido. Canvas e superfície de cartão
+   ficam próximos em claridade aqui (os dois claros), diferente da paleta
+   terracota anterior, então um único par de tokens de tinta serve para os
+   dois contextos. Forma (pílula, sombra empilhada) e tipografia (Inter)
+   continuam como antes — o pedido foi de cor, não de forma.
+
+   Sem variante de modo escuro de propósito: o pedido foi "a maior parte em
+   almond cream" — um fundo verde-escuro alternativo (por trás do celular
+   estar no modo escuro do sistema) ia contra isso. O creme domina sempre,
+   independente do tema do aparelho. */
+
+:root {
+  --canvas: #efdfcf;
+  --on-canvas: #354f44;
+  --on-canvas-mute: #736d57;
+  --surface: #faf4ea;
+  --ink: #354f44;
+  /* Escurecido de #736d57 pra #5c5646 (3.98:1 → 5.61:1 contra --canvas) —
+     abaixo do mínimo AA de 4,5:1, e esse tom carrega texto clínico de
+     verdade (subtítulo de card, timestamps). Mesma família de cor, só mais
+     escuro. */
+  --ink-mute: #5c5646;
+  --ink-faint: #a89c88;
+  --hairline: #e0cfb8;
+  --accent: #354f44;
+  --accent-deep: #24352d;
+  --on-accent: #efdfcf;
+  --accent-soft: #d3c9ba;
+  --accent-line: #a5a597;
+  /* Escurecido de #a3671b pra #824611 (3.97:1 → 6.32:1 contra --warn-soft),
+     mesma razão do --ink-mute acima. */
+  --warn: #824611;
+  --warn-soft: #f6ecd9;
+  --danger: #a3352b;
+  /* Marca-texto: cor própria, fora da paleta de marca — mesma lógica de
+     warn/danger, um destaque não é uma cor de identidade visual. */
+  --highlight: #f5df8e;
+  --on-highlight: #3d3210;
+  --r-xs: 4px;
+  --r-sm: 5px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-full: 9999px;
+  --shadow-card: 0 8px 8px rgba(53,79,68,0.08), 0 4px 4px rgba(53,79,68,0.08), 0 2px 2px rgba(53,79,68,0.08), 0 0 0 1px rgba(53,79,68,0.08);
+  --shadow-float: 0 25px 50px -12px rgba(53,79,68,0.35);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--canvas);
+  color: var(--on-canvas);
+  font-family: 'Inter Variable', Inter, Helvetica, Arial, sans-serif;
+  font-weight: 420;
+  font-feature-settings: "ss03";
+}
+
+#app { max-width: 620px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; }
+
+header.topbar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--hairline);
+}
+header.topbar h1 {
+  font-size: 20px; margin: 0; font-weight: 500; letter-spacing: 0.3px; line-height: 1.4;
+}
+header.topbar button.icon-btn {
+  background: none; border: none; font-size: 20px; color: var(--on-canvas); padding: 4px 8px;
+}
+header.topbar .back { font-size: 15px; color: var(--on-canvas-mute); background: none; border: none; padding: 4px 4px; font-weight: 500; }
+
+main { flex: 1; padding: 12px 16px 100px; overflow-y: auto; }
+
+.searchbar {
+  width: 100%; padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--hairline);
+  background: var(--surface); color: var(--ink); font-size: 15px; margin-bottom: 12px;
+}
+
+.card {
+  background: var(--surface); color: var(--ink); border: 1px solid var(--hairline); border-radius: var(--r-lg);
+  padding: 12px 14px; margin-bottom: 10px; box-shadow: var(--shadow-card);
+}
+.tappable { cursor: pointer; }
+.card .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.card .leito { font-weight: 550; font-size: 16px; }
+.card .sub { color: var(--ink-mute); font-size: 13.5px; margin-top: 2px; }
+.pill {
+  font-size: 11px; padding: 3px 9px; border-radius: var(--r-full); font-weight: 500;
+  background: var(--warn-soft); color: var(--warn); white-space: nowrap;
+}
+
+.empty { text-align: center; color: var(--on-canvas-mute); padding: 60px 20px; font-size: 14px; }
+
+.swipe-item { position: relative; margin-bottom: 10px; border-radius: var(--r-lg); overflow: hidden; }
+.swipe-item .swipe-content { position: relative; z-index: 1; margin-bottom: 0; touch-action: pan-y; }
+.swipe-action {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 2px; width: 84px; margin-left: auto;
+  background: var(--danger); color: #fff; font-size: 12px; font-weight: 600; line-height: 1.3;
+}
+
+.tabs { display: flex; overflow-x: auto; gap: 6px; margin-bottom: 14px; padding-bottom: 4px; }
+.tabs button {
+  flex: none; padding: 7px 14px; border-radius: var(--r-full); border: 1px solid var(--hairline);
+  background: var(--surface); color: var(--ink-mute); font-size: 13.5px; font-weight: 500; white-space: nowrap;
+}
+.tabs button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.tabs.vertical { flex-direction: column; overflow-x: visible; }
+.tabs.vertical button { width: 100%; text-align: left; }
+
+.section-title {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .72px; color: var(--on-canvas-mute);
+  margin: 14px 0 6px; font-weight: 400;
+}
+
+label { display: block; font-size: 12.5px; color: var(--on-canvas-mute); margin: 10px 0 4px; }
+input[type=text], input[type=number], input[type=date], input[type=password],
+input[type=tel], textarea, select {
+  width: 100%; padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--hairline);
+  background: var(--surface); color: var(--ink); font-size: 15px; font-family: inherit;
+}
+textarea { resize: vertical; min-height: 110px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+.btn {
+  display: inline-block; padding: 12px 24px; border-radius: var(--r-full); border: none;
+  font-size: 16px; font-weight: 420; text-align: center; width: 100%; margin-top: 14px;
+}
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-primary:active { background: var(--accent-deep); }
+/* accent-soft contra canvas é ~1,3:1 — sem borda, "Salvar"/"Adicionar" e
+   outras ações reais (não só as secundárias de verdade) liam como
+   desabilitadas. A borda dá o mínimo de contraste de componente (WCAG
+   1.4.11, 3:1+) sem deixar o botão com o peso visual de uma ação primária. */
+.btn-secondary { background: var(--accent-soft); color: var(--ink); border: 1.5px solid var(--ink-mute); }
+.btn-secondary:active { background: var(--accent-line); }
+.btn-ghost { background: none; color: var(--ink-mute); }
+.btn-perigo { background: var(--danger); color: var(--on-accent); }
+.btn-perigo:active { background: #7d281f; }
+.btn[disabled] { opacity: .45; }
+
+.fab {
+  position: fixed; bottom: calc(20px + env(safe-area-inset-bottom)); left: 50%;
+  transform: translateX(-50%); max-width: 620px; width: calc(100% - 32px);
+  display: flex; gap: 8px; z-index: 6;
+}
+.fab .btn { margin-top: 0; box-shadow: var(--shadow-float); }
+
+.list-item { padding: 10px 0; border-bottom: 1px solid var(--hairline); }
+.list-item:last-child { border-bottom: none; }
+.list-item .meta { font-size: 12px; color: var(--ink-mute); margin-bottom: 3px; }
+.strike { text-decoration: line-through; color: var(--ink-mute); }
+
+mark {
+  background: var(--highlight); color: var(--on-highlight);
+  border-radius: 3px; padding: 0 2px; font-weight: 600;
+}
+
+.chart-wrap { background: var(--surface); color: var(--ink); border: 1px solid var(--hairline); border-radius: var(--r-lg); padding: 10px; box-shadow: var(--shadow-card); }
+
+.hw-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: var(--canvas);
+  display: flex; flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* Sem isso, escrever contínuo com a Apple Pencil às vezes é lido pelo
+     Safari como um gesto de seleção de texto/callout, e a escrita para pra
+     abrir o menu de seleção no meio do traço. touch-action aqui (não só no
+     canvas) evita que um ancestral ainda tente reconhecer algum gesto
+     nativo (scroll/zoom/seleção) antes do toque chegar no canvas. */
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+}
+.hw-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 14px;
+  border-bottom: 1px solid var(--hairline); flex: none;
+}
+.hw-toolbar-group { display: flex; align-items: center; gap: 8px; }
+.hw-tool {
+  padding: 6px 10px; border-radius: var(--r-full); border: 1px solid var(--hairline);
+  background: var(--surface); font-size: 16px; line-height: 1;
+}
+.hw-tool.active { background: var(--accent); border-color: var(--accent); }
+.hw-swatch {
+  width: 26px; height: 26px; border-radius: var(--r-full); border: 2px solid transparent; padding: 0; flex: none;
+}
+.hw-swatch.active { border-color: var(--ink); }
+.hw-espessura { flex: none; width: 90px; margin-left: 4px; }
+.hw-toolbar .btn { width: auto; margin-top: 0; padding: 8px 12px; font-size: 13.5px; }
+.hw-canvas-wrap { flex: 1; position: relative; display: flex; min-height: 0; }
+.hw-canvas {
+  flex: 1; min-height: 0; display: block; width: 100%; touch-action: none; background: var(--surface);
+}
+.hw-actions {
+  display: flex; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--hairline); flex: none;
+}
+.hw-actions .btn { margin-top: 0; }
+
+.hw-zoom {
+  position: absolute; background: var(--surface); border: 1px solid var(--hairline);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-float); overflow: hidden;
+  display: flex; flex-direction: column; z-index: 10;
+}
+/* [hidden] do HTML e a regra acima empatam em especificidade — sem isso,
+   o "display:flex" daqui vence e a caixa nunca fica realmente invisível,
+   mesmo com o atributo hidden corretamente marcado via JS. */
+.hw-zoom[hidden] { display: none; }
+.hw-zoom-header {
+  flex: none; display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 10px; font-size: 12px; color: var(--ink-mute); background: var(--accent-soft);
+  cursor: move; touch-action: none;
+}
+.hw-zoom-close { padding: 2px 4px; }
+.hw-zoom-canvas { flex: 1; min-height: 0; display: block; width: 100%; touch-action: none; background: var(--surface); }
+
+/* Diálogos no visual do app (js/dialog.js) — substitui confirm()/prompt()/
+   alert() nativos, que quebravam a identidade visual bem nos momentos de
+   maior peso (dar alta, excluir de vez). */
+.dlg-overlay {
+  position: fixed; inset: 0; z-index: 100; background: rgba(36,53,45,0.45);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.dlg-card {
+  background: var(--surface); color: var(--ink); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-float); padding: 20px; width: 100%; max-width: 380px;
+}
+.dlg-titulo { font-size: 17px; font-weight: 550; margin-bottom: 6px; }
+.dlg-mensagem { font-size: 14px; color: var(--ink-mute); line-height: 1.45; }
+.dlg-card input.dlg-input { margin-top: 12px; }
+.dlg-acoes { display: flex; gap: 10px; margin-top: 16px; }
+.dlg-acoes .btn { margin-top: 0; }
+
+.dlg-toast {
+  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom));
+  transform: translate(-50%, 8px); max-width: calc(100% - 32px);
+  background: var(--ink); color: var(--canvas); border-radius: var(--r-md);
+  padding: 12px 18px; font-size: 14px; box-shadow: var(--shadow-float);
+  z-index: 110; opacity: 0; transition: opacity .25s ease, transform .25s ease;
+  border-left: 3px solid var(--accent-line);
+}
+.dlg-toast-visivel { opacity: 1; transform: translate(-50%, 0); }
+.dlg-toast-erro { border-left-color: var(--danger); }
+.dlg-toast-sucesso { border-left-color: var(--highlight); }
+
+/* Resumo por data (js/app.js, extrairResumoPorData) — faixa fixa, só
+   leitura, colada no topo da MESMA caixa da HDA: por isso a borda/fundo sai
+   do <textarea> e vai pro wrapper, e o campo em si fica sem chrome próprio
+   pra parecer uma continuação da mesma caixa, não duas caixas separadas. */
+.hda-com-resumo {
+  border: 1px solid var(--hairline); border-radius: var(--r-md); background: var(--surface); overflow: hidden;
+}
+.hda-resumo-fixo {
+  padding: 8px 12px; font-size: 13px; color: var(--ink-mute); line-height: 1.5;
+  background: var(--accent-soft); border-bottom: 1px solid var(--hairline);
+}
+.hda-resumo-fixo strong { color: var(--ink); }
+.hda-com-resumo textarea {
+  border: none; border-radius: 0; background: none; display: block;
+}
+
+/* Superfície de escrita com Pencil que vira texto (js/scribble.js) — papel
+   pautado igual ao do canvas de tinta (mesmo --hairline, mesmo espaçamento
+   de linha), só que aqui é um <textarea> de verdade por baixo. */
+.scr-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: var(--canvas);
+  display: flex; flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.scr-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-bottom: 1px solid var(--hairline); flex: none;
+  font-size: 15px;
+}
+.scr-fechar { background: none; border: none; font-size: 16px; color: var(--ink-mute); padding: 4px 8px; }
+.scr-textarea {
+  flex: 1; min-height: 0; width: 100%; border: none; outline: none; resize: none;
+  box-sizing: border-box; padding: 0 16px;
+  background: var(--surface) repeating-linear-gradient(to bottom, transparent 0, transparent 33px, var(--hairline) 33px, var(--hairline) 34px);
+  font: inherit; font-size: 20px; line-height: 34px; color: var(--ink);
+}
+.scr-actions {
+  display: flex; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--hairline); flex: none;
+}
+.scr-actions .btn { margin-top: 0; }
+
+@media print {
+  header.topbar, .fab, .tabs, .no-print { display: none !important; }
+  body, .card { background: #fff; color: #000; box-shadow: none; }
+}
