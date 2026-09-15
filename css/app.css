@@ -1,50 +1,59 @@
-/* Paleta a partir de coolors.co/efdfcf-736d57-354f44-b5783f-2e2b25: Almond
-   Cream de fundo, Dark Slate Grey e Ebony como os dois tons de detalhe —
-   Copper e Graphite ficam de fora por pedido. Canvas e superfície de cartão
-   ficam próximos em claridade aqui (os dois claros), diferente da paleta
-   terracota anterior, então um único par de tokens de tinta serve para os
-   dois contextos. Forma (pílula, sombra empilhada) e tipografia (Inter)
-   continuam como antes — o pedido foi de cor, não de forma.
+/* Paleta a partir do DESIGN.md gerado por `npx getdesign add wired`
+   (inspirado na revista WIRED): preto/branco estrito, uma serifa de
+   destaque (Playfair Display) só pro título de tela, cantos quadrados
+   (--r-full é a única exceção, reservada pra ícone circular e pra pill de
+   status/semântica), sem sombra — elevação vira hairline. Cor semântica
+   (danger/warn/highlight) fica de fora dessa troca: não é identidade
+   visual, é estado, e o DESIGN.md não tem opinião sobre isso.
 
-   Sem variante de modo escuro de propósito: o pedido foi "a maior parte em
-   almond cream" — um fundo verde-escuro alternativo (por trás do celular
-   estar no modo escuro do sistema) ia contra isso. O creme domina sempre,
-   independente do tema do aparelho. */
+   --ink-mute usa o valor #757575 que o próprio DESIGN.md já nomeia como
+   `colors.body` — 4,61:1 contra o novo --canvas branco, verificado com o
+   mesmo script de contraste WCAG usado nesta sessão (não chutado). */
 
 :root {
-  --canvas: #efdfcf;
-  --on-canvas: #354f44;
-  --on-canvas-mute: #736d57;
-  --surface: #faf4ea;
-  --ink: #354f44;
-  /* Escurecido de #736d57 pra #5c5646 (3.98:1 → 5.61:1 contra --canvas) —
-     abaixo do mínimo AA de 4,5:1, e esse tom carrega texto clínico de
-     verdade (subtítulo de card, timestamps). Mesma família de cor, só mais
-     escuro. */
-  --ink-mute: #5c5646;
-  --ink-faint: #a89c88;
-  --hairline: #e0cfb8;
-  --accent: #354f44;
-  --accent-deep: #24352d;
-  --on-accent: #efdfcf;
-  --accent-soft: #d3c9ba;
-  --accent-line: #a5a597;
-  /* Escurecido de #a3671b pra #824611 (3.97:1 → 6.32:1 contra --warn-soft),
-     mesma razão do --ink-mute acima. */
+  --canvas: #ffffff;
+  --on-canvas: #000000;
+  --on-canvas-mute: #757575;
+  --surface: #ffffff;
+  --canvas-soft: #f5f5f5;
+  --ink: #000000;
+  --ink-mute: #757575;
+  --ink-faint: #bdbdbd;
+  --hairline: #e0e0e0;
+  --accent: #000000;
+  --accent-deep: #1a1a1a;
+  --on-accent: #ffffff;
+  --accent-soft: #f5f5f5;
+  --accent-line: #757575;
+  --link: #057dbc;
+  /* Cor semântica — mantida do sistema anterior, só reverificada contra o
+     novo --surface branco (ficou com MAIS contraste, não menos). */
   --warn: #824611;
   --warn-soft: #f6ecd9;
   --danger: #a3352b;
-  /* Marca-texto: cor própria, fora da paleta de marca — mesma lógica de
-     warn/danger, um destaque não é uma cor de identidade visual. */
   --highlight: #f5df8e;
   --on-highlight: #3d3210;
-  --r-xs: 4px;
-  --r-sm: 5px;
-  --r-md: 8px;
-  --r-lg: 12px;
+  /* Só --r-full sobrevive intacto — pill de status e ícone circular
+     continuam redondos (estado semântico, não identidade de marca). Todo
+     o resto do app usa --r-xs/sm/md/lg pra canto, então zerar os quatro
+     aqui já deixa botão/card/input/tab/diálogo quadrados sem tocar em
+     nenhuma das ~30 regras que os referenciam. */
+  --r-xs: 0px;
+  --r-sm: 0px;
+  --r-md: 0px;
+  --r-lg: 0px;
   --r-full: 9999px;
-  --shadow-card: 0 8px 8px rgba(53,79,68,0.08), 0 4px 4px rgba(53,79,68,0.08), 0 2px 2px rgba(53,79,68,0.08), 0 0 0 1px rgba(53,79,68,0.08);
-  --shadow-float: 0 25px 50px -12px rgba(53,79,68,0.35);
+  /* Sem sombra — o WIRED usa hairline/borda como única pista de elevação.
+     Mesma lógica de token único: zerar aqui vale pra todo mundo que usa
+     var(--shadow-card)/var(--shadow-float). As duas superfícies que
+     flutuam de verdade (diálogo, caixa de zoom) ganham borda grossa preta
+     à parte, mais abaixo. */
+  --shadow-card: none;
+  --shadow-float: none;
+  /* Curvas do Emil Kowalski (emil-design-eng) — mais "vivas" que o
+     ease-out padrão do CSS, que é fraco demais pra sentir intencional. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -69,7 +78,10 @@ header.topbar {
   border-bottom: 1px solid var(--hairline);
 }
 header.topbar h1 {
-  font-size: 20px; margin: 0; font-weight: 500; letter-spacing: 0.3px; line-height: 1.4;
+  /* Único lugar que vira serifa — título de tela é o "display" real do
+     app; texto corrido (textarea, lista) continua em Inter, ver DESIGN.md. */
+  font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  font-size: 22px; margin: 0; font-weight: 500; letter-spacing: -0.2px; line-height: 1.3;
 }
 header.topbar button.icon-btn {
   background: none; border: none; font-size: 20px; color: var(--on-canvas); padding: 4px 8px;
@@ -87,7 +99,8 @@ main { flex: 1; padding: 12px 16px 100px; overflow-y: auto; }
   background: var(--surface); color: var(--ink); border: 1px solid var(--hairline); border-radius: var(--r-lg);
   padding: 12px 14px; margin-bottom: 10px; box-shadow: var(--shadow-card);
 }
-.tappable { cursor: pointer; }
+.tappable { cursor: pointer; transition: transform 120ms var(--ease-out); }
+.tappable:active { transform: scale(0.98); }
 .card .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .card .leito { font-weight: 550; font-size: 16px; }
 .card .sub { color: var(--ink-mute); font-size: 13.5px; margin-top: 2px; }
@@ -108,16 +121,20 @@ main { flex: 1; padding: 12px 16px 100px; overflow-y: auto; }
 
 .tabs { display: flex; overflow-x: auto; gap: 6px; margin-bottom: 14px; padding-bottom: 4px; }
 .tabs button {
-  flex: none; padding: 7px 14px; border-radius: var(--r-full); border: 1px solid var(--hairline);
+  /* r-md (0px agora), não r-full — navegação é estrutural, não estado
+     semântico, então segue o quadrado do resto do app (shape consistency). */
+  flex: none; padding: 7px 14px; border-radius: var(--r-md); border: 1px solid var(--hairline);
   background: var(--surface); color: var(--ink-mute); font-size: 13.5px; font-weight: 500; white-space: nowrap;
+  transition: transform 120ms var(--ease-out);
 }
+.tabs button:active { transform: scale(0.97); }
 .tabs button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .tabs.vertical { flex-direction: column; overflow-x: visible; }
 .tabs.vertical button { width: 100%; text-align: left; }
 
 .section-title {
   font-size: 12px; text-transform: uppercase; letter-spacing: .72px; color: var(--on-canvas-mute);
-  margin: 14px 0 6px; font-weight: 400;
+  margin: 14px 0 6px; font-weight: 700;
 }
 
 label { display: block; font-size: 12.5px; color: var(--on-canvas-mute); margin: 10px 0 4px; }
@@ -127,21 +144,29 @@ input[type=tel], textarea, select {
   background: var(--surface); color: var(--ink); font-size: 15px; font-family: inherit;
 }
 textarea { resize: vertical; min-height: 110px; }
+/* Bloco de Notas (js/app.js, tabEvolucoes): caixa infinita — cresce com o
+   texto (autoResizeTextarea) em vez de rolar por dentro, então não faz
+   sentido também deixar arrastar a altura na mão. */
+#edit-evolucao { resize: none; overflow-y: hidden; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 
 .btn {
-  display: inline-block; padding: 12px 24px; border-radius: var(--r-full); border: none;
+  /* r-md (0px) — botão do WIRED é sempre retângulo reto, nunca pílula
+     (era --r-full antes; essa é a única regra que a troca de token
+     sozinha não resolvia, porque não usava r-xs/sm/md/lg). */
+  display: inline-block; padding: 12px 24px; border-radius: var(--r-md); border: none;
   font-size: 16px; font-weight: 420; text-align: center; width: 100%; margin-top: 14px;
+  transition: transform 140ms var(--ease-out);
 }
+.btn:active { transform: scale(0.97); }
 .btn-primary { background: var(--accent); color: var(--on-accent); }
 .btn-primary:active { background: var(--accent-deep); }
-/* accent-soft contra canvas é ~1,3:1 — sem borda, "Salvar"/"Adicionar" e
-   outras ações reais (não só as secundárias de verdade) liam como
-   desabilitadas. A borda dá o mínimo de contraste de componente (WCAG
-   1.4.11, 3:1+) sem deixar o botão com o peso visual de uma ação primária. */
-.btn-secondary { background: var(--accent-soft); color: var(--ink); border: 1.5px solid var(--ink-mute); }
-.btn-secondary:active { background: var(--accent-line); }
+/* Contorno, não preenchido — button-outline do DESIGN.md: fundo do canvas,
+   borda preta. Era preenchido com accent-soft antes (pedia borda pra não
+   ler como desabilitado); o preto puro já resolve o contraste sozinho. */
+.btn-secondary { background: var(--canvas); color: var(--ink); border: 1.5px solid var(--ink); }
+.btn-secondary:active { background: var(--canvas-soft); }
 .btn-ghost { background: none; color: var(--ink-mute); }
 .btn-perigo { background: var(--danger); color: var(--on-accent); }
 .btn-perigo:active { background: #7d281f; }
@@ -207,8 +232,11 @@ mark {
 .hw-actions .btn { margin-top: 0; }
 
 .hw-zoom {
-  position: absolute; background: var(--surface); border: 1px solid var(--hairline);
-  border-radius: var(--r-lg); box-shadow: var(--shadow-float); overflow: hidden;
+  /* Sem sombra pra flutuar (ver --shadow-float: none) — borda grossa preta
+     no lugar (Nível 2 do DESIGN.md), senão a caixa arrastável fica sem
+     contorno nenhum por cima do papel. */
+  position: absolute; background: var(--surface); border: 2px solid var(--ink);
+  border-radius: var(--r-lg); overflow: hidden;
   display: flex; flex-direction: column; z-index: 10;
 }
 /* [hidden] do HTML e a regra acima empatam em especificidade — sem isso,
@@ -227,12 +255,21 @@ mark {
    alert() nativos, que quebravam a identidade visual bem nos momentos de
    maior peso (dar alta, excluir de vez). */
 .dlg-overlay {
-  position: fixed; inset: 0; z-index: 100; background: rgba(36,53,45,0.45);
+  position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.45);
   display: flex; align-items: center; justify-content: center; padding: 20px;
 }
 .dlg-card {
-  background: var(--surface); color: var(--ink); border-radius: var(--r-lg);
-  box-shadow: var(--shadow-float); padding: 20px; width: 100%; max-width: 380px;
+  /* Sem sombra (ver --shadow-float acima) — borda grossa preta no lugar.
+     Entrada com @starting-style: nunca de scale(0) puro (emil-design-eng —
+     nada no mundo real aparece do nada), e transform-origin fica no centro
+     de propósito: diálogo não tem gatilho pra ancorar, aparece centralizado. */
+  background: var(--surface); color: var(--ink); border: 2px solid var(--ink);
+  border-radius: var(--r-lg); padding: 20px; width: 100%; max-width: 380px;
+  transform-origin: center;
+  transition: transform 200ms var(--ease-out), opacity 200ms var(--ease-out);
+}
+@starting-style {
+  .dlg-card { transform: scale(0.95); opacity: 0; }
 }
 .dlg-titulo { font-size: 17px; font-weight: 550; margin-bottom: 6px; }
 .dlg-mensagem { font-size: 14px; color: var(--ink-mute); line-height: 1.45; }
@@ -293,6 +330,15 @@ mark {
   display: flex; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--hairline); flex: none;
 }
 .scr-actions .btn { margin-top: 0; }
+
+/* emil-design-eng: reduzir, não zerar — cor/opacidade continuam,
+   movimento (scale/transform) some. Cobre todo :active/entrada novos
+   desta troca de visual. */
+@media (prefers-reduced-motion: reduce) {
+  .btn, .tappable, .tabs button, .dlg-card {
+    transition-duration: 0ms !important;
+  }
+}
 
 @media print {
   header.topbar, .fab, .tabs, .no-print { display: none !important; }

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Wards</title>
-<meta name="theme-color" content="#efdfcf">
+<meta name="theme-color" content="#ffffff">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon.svg">
@@ -13,22 +13,22 @@
 <meta name="apple-mobile-web-app-title" content="Wards">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/app.css?v=52">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Playfair+Display:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css?v=60">
 </head>
 <body>
   <div id="app"></div>
 
-  <script src="js/db.js?v=52"></script>
-  <script src="js/matching.js?v=52"></script>
-  <script src="js/archive.js?v=52"></script>
-  <script src="js/report.js?v=52"></script>
-  <script src="js/backup.js?v=52"></script>
-  <script src="js/sync.js?v=52"></script>
-  <script src="js/dialog.js?v=52"></script>
-  <script src="js/handwriting.js?v=52"></script>
-  <script src="js/scribble.js?v=52"></script>
-  <script src="js/app.js?v=52"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="js/supabaseClient.js?v=60"></script>
+  <script src="js/db.js?v=60"></script>
+  <script src="js/matching.js?v=60"></script>
+  <script src="js/archive.js?v=60"></script>
+  <script src="js/report.js?v=60"></script>
+  <script src="js/dialog.js?v=60"></script>
+  <script src="js/handwriting.js?v=60"></script>
+  <script src="js/scribble.js?v=60"></script>
+  <script src="js/app.js?v=60"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {

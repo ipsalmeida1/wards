@@ -17,7 +17,7 @@
 // que o Notas do iPad faz.
 const Handwriting = (() => {
   const CORES = ['#1a1a1a', '#1d4ed8', '#b03a2e', '#2f6f4f'];
-  const COR_PAUTA = '#e0cfb8';
+  const COR_PAUTA = '#e0e0e0';
   const ESPACO_LINHA = 34;
   const MARGEM = 10;
   const ZOOM_FATOR = 3;

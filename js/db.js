@@ -1,97 +1,51 @@
-// Camada de persistência — IndexedDB puro, sem biblioteca (offline garantido,
-// nada pra falhar em rede). Um "object store" por entidade, espelhando o
-// modelo da especificação. Tudo aqui é Promise-based.
-
-const DB_NAME = 'wards';
-const DB_VERSION = 4; // v4: adiciona o store "vitalSigns" (sinais vitais viraram aba própria)
-
-const STORES = [
-  'patients', 'comorbidades', 'admissions', 'problemas',
-  'diagnosisCategories', 'roundEntries', 'exams', 'opinions', 'planItems',
-  'attachments', 'vitalSigns',
-];
-
-let dbPromise = null;
-
-function openDB() {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      for (const nome of STORES) {
-        if (!db.objectStoreNames.contains(nome)) {
-          db.createObjectStore(nome, { keyPath: 'id' });
-        }
-      }
-    };
-    req.onsuccess = () => {
-      const db = req.result;
-      // Se uma versão nova precisar abrir (outra aba, outro momento), essa
-      // conexão se fecha sozinha em vez de travar a outra aba pra sempre
-      // esperando — sem isso, duas abas abertas ao mesmo tempo podem
-      // travar indefinidamente numa atualização de versão do banco.
-      db.onversionchange = () => db.close();
-      resolve(db);
-    };
-    req.onerror = () => reject(req.error);
-    req.onblocked = () => {
-      console.warn('IndexedDB bloqueado — feche outras abas do app abertas e recarregue.');
-    };
-  });
-  return dbPromise;
-}
+// Camada de persistência — fala com o Supabase (Postgres) em vez de
+// IndexedDB. Mantém exatamente a mesma API (Store.put/get/all/where/remove)
+// que o resto do app já usava, então app.js/report.js/archive.js/
+// matching.js não precisaram mudar quase nada por causa dessa troca.
+//
+// Cada linha das tabelas é {id, user_id, data jsonb, created_at} — ver
+// supabase/schema.sql. O registro inteiro (leito, hda, evolucaoTexto,
+// criadoEm...) mora dentro de `data`, exatamente como os objetos que o app
+// já constrói; `user_id` é preenchido sozinho pelo Postgres
+// (default auth.uid()) e a Row Level Security garante que cada usuário só
+// vê e só grava o que é seu — não precisa (nem dá pra) filtrar por usuário
+// aqui, o banco já faz isso.
 
 function uuid() {
   return crypto.randomUUID();
 }
 
-async function tx(storeNames, mode) {
-  const db = await openDB();
-  return db.transaction(storeNames, mode);
-}
-
 const Store = {
   async put(storeName, obj) {
-    const t = await tx(storeName, 'readwrite');
-    return new Promise((resolve, reject) => {
-      const req = t.objectStore(storeName).put(obj);
-      req.onsuccess = () => resolve(obj);
-      req.onerror = () => reject(req.error);
-    });
+    const { error } = await SB.from(storeName).upsert({ id: obj.id, data: obj });
+    if (error) throw error;
+    return obj;
   },
 
   async get(storeName, id) {
-    const t = await tx(storeName, 'readonly');
-    return new Promise((resolve, reject) => {
-      const req = t.objectStore(storeName).get(id);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
+    const { data, error } = await SB.from(storeName).select('data').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return data ? data.data : null;
   },
 
   async all(storeName) {
-    const t = await tx(storeName, 'readonly');
-    return new Promise((resolve, reject) => {
-      const req = t.objectStore(storeName).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
+    const { data, error } = await SB.from(storeName).select('data');
+    if (error) throw error;
+    return (data || []).map((linha) => linha.data);
   },
 
+  // Continua sendo um filtro em JS sobre o resultado de `all` (não uma
+  // query indexada no Postgres) — mesmo comportamento de antes, só trocou
+  // de onde os dados vêm.
   async where(storeName, predicate) {
     const items = await Store.all(storeName);
     return items.filter(predicate);
   },
 
   async remove(storeName, id) {
-    const t = await tx(storeName, 'readwrite');
-    return new Promise((resolve, reject) => {
-      const req = t.objectStore(storeName).delete(id);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
-    });
+    const { error } = await SB.from(storeName).delete().eq('id', id);
+    if (error) throw error;
   },
 };
 
-window.WardsDB = { Store, uuid, openDB };
+window.WardsDB = { Store, uuid };

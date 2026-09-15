@@ -2,29 +2,35 @@
 // Ditado (por leito) → Wards, sem passar pelo app. Pensado pra ser chamado
 // pelo Claude no meio de uma conversa: o Claude já organiza/limpa o texto
 // ditado e decide os números antes de chamar isto — este script só localiza
-// a internação certa pelo leito e escreve no campo/store certo, do mesmo
+// a internação certa pelo leito e escreve no campo/tabela certa, do mesmo
 // jeito que o app faria.
 //
+// Fala direto com a API REST do Supabase via fetch puro (sem instalar
+// @supabase/supabase-js) — mesma filosofia de zero dependência do resto do
+// projeto. Autentica como o usuário de verdade (e-mail+senha), então tudo
+// que grava cai sob a conta dele via Row Level Security — não precisa (nem
+// deve) da chave de serviço aqui.
+//
 // Uso (texto livre — hda, evolucao, prescricao, motivo):
-//   node scripts/ditar.js --code <codigo> --leito "302-B" --aba evolucao --texto "..."
+//   node scripts/ditar.js --email "voce@x.com" --senha "..." --leito "302-B" --aba evolucao --texto "..."
+//   (ou WARDS_EMAIL / WARDS_SENHA como variável de ambiente, em vez de --email/--senha)
 //
 // Uso (sinais vitais — cria um registro novo, como o botão "Adicionar" da aba):
-//   node scripts/ditar.js --code <codigo> --leito "302-B" --aba sinaisvitais --fc 80 --sato2 96 --pa "120x80" --tax 36.5
+//   node scripts/ditar.js --email ... --senha ... --leito "302-B" --aba sinaisvitais --fc 80 --sato2 96 --pa "120x80" --tax 36.5
 //
 // Uso (exame laboratorial — mescla no exame de HOJE já existente, como a
 // extração automática de labs da Evolução faz; cria um novo se não houver):
-//   node scripts/ditar.js --code <codigo> --leito "302-B" --aba exame --creat 5 --ureia 42 --na 138
+//   node scripts/ditar.js --email ... --senha ... --leito "302-B" --aba exame --creat 5 --ureia 42 --na 138
 //   (campos aceitos: hb, ht, vcm, chcm, plaq, leuco, pcr, ureia, creat, na, k, cl; --resumo opcional)
 //
-// Risco a saber: isto busca a nuvem, muda só a internação/registro alvo e
-// manda de volta — como o app inteiro, não faz merge fino por campo (ver
-// js/backup.js). Se o mesmo paciente tiver uma edição local ainda não
-// sincronizada em algum aparelho na hora em que isto rodar, aquela edição
-// local pode ser perdida quando o aparelho sincronizar depois. Seguro na
-// prática porque a janela é curta (edição só vira "não sincronizada" entre
-// digitar e apertar Salvar), mas não é zero.
+// Diferente da versão antiga (que reescrevia um blob JSON inteiro): cada
+// gravação aqui é um upsert de UMA linha na tabela certa, direto no
+// Postgres — não existe mais o risco de "duas cópias divergentes"
+// (era um problema do modelo antigo de sincronização por código, que não
+// existe mais nesta versão multiusuário).
 
-const URL_SYNC = 'https://wards-app.vercel.app/api/sync';
+const SUPABASE_URL = 'https://jmaeqnpdnllachqvhibk.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImptYWVxbnBkbmxsYWNocXZoaWJrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk0MzUxNDcsImV4cCI6MjEwNTAxMTE0N30.hPYo_PtRX8AaqLnxCh7AlXV6u6ZU737MG4gZZeLLBrE';
 
 const CAMPO_TEXTO_POR_ABA = {
   hda: 'hda',
@@ -50,8 +56,7 @@ function formatarDataHora(d = new Date()) {
   return `${dia}/${mes}/${d.getFullYear()} ${hh}:${mm}`;
 }
 
-// Mesma data (sem hora) pra decidir se um exame de labs é "de hoje" — bate
-// com fmtData(x) do app (toLocaleDateString('pt-BR')), sem precisar do app.
+// Mesma data (sem hora) pra decidir se um exame de labs é "de hoje".
 function mesmaData(a, b) {
   const da = new Date(a), db_ = new Date(b);
   return da.getFullYear() === db_.getFullYear() && da.getMonth() === db_.getMonth() && da.getDate() === db_.getDate();
@@ -72,8 +77,52 @@ function parseArgs(argv) {
   return out;
 }
 
-function acharAdmissao(dump, leitoAlvo) {
-  const admissoes = (dump.stores && dump.stores.admissions) || [];
+async function autenticar(email, senha) {
+  const resp = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+    body: JSON.stringify({ email, password: senha }),
+  });
+  const corpo = await resp.json();
+  if (!resp.ok) throw new Error(`login falhou: ${corpo.error_description || corpo.msg || resp.status}`);
+  return corpo.access_token;
+}
+
+function headersAutenticados(token) {
+  return { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+}
+
+async function buscarTabela(token, tabela) {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${tabela}?select=data`, { headers: headersAutenticados(token) });
+  if (!resp.ok) throw new Error(`falha ao buscar ${tabela}: ${resp.status} ${await resp.text()}`);
+  const linhas = await resp.json();
+  return linhas.map((l) => l.data);
+}
+
+async function upsert(token, tabela, obj) {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${tabela}`, {
+    method: 'POST',
+    headers: { ...headersAutenticados(token), Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify({ id: obj.id, data: obj }),
+  });
+  if (!resp.ok) throw new Error(`falha ao gravar em ${tabela}: ${resp.status} ${await resp.text()}`);
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const email = args.email || process.env.WARDS_EMAIL;
+  const senha = args.senha || args.password || process.env.WARDS_SENHA;
+  const leitoAlvo = args.leito;
+  const abaAlvo = normalizar(args.aba);
+
+  if (!email || !senha || !leitoAlvo || !abaAlvo) {
+    console.error('uso: node ditar.js --email <email> --senha <senha> --leito "302-B" --aba <hda|evolucao|prescricao|motivo|sinaisvitais|exame> [...]');
+    process.exit(1);
+  }
+
+  const token = await autenticar(email, senha);
+
+  const admissoes = await buscarTabela(token, 'admissions');
   const alvoNorm = normalizar(leitoAlvo);
   const candidatas = admissoes.filter((a) => a.status === 'ativo' && normalizar(a.leito).includes(alvoNorm));
   if (candidatas.length === 0) {
@@ -84,27 +133,9 @@ function acharAdmissao(dump, leitoAlvo) {
     console.error(`mais de um leito ativo bate com "${leitoAlvo}": ${candidatas.map((a) => a.leito).join(', ')} — seja mais específico.`);
     process.exit(1);
   }
-  return candidatas[0];
-}
+  const admissao = candidatas[0];
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const codigo = args.code || process.env.WARDS_SYNC_CODE;
-  const leitoAlvo = args.leito;
-  const abaAlvo = normalizar(args.aba);
-
-  if (!codigo || !leitoAlvo || !abaAlvo) {
-    console.error('uso: node ditar.js --code <codigo> --leito "302-B" --aba <hda|evolucao|prescricao|motivo|sinaisvitais|exame> [...]');
-    process.exit(1);
-  }
-
-  const respGet = await fetch(`${URL_SYNC}?code=${encodeURIComponent(codigo)}`);
-  if (!respGet.ok) { console.error('falha ao buscar da nuvem:', respGet.status); process.exit(1); }
-  const dump = await respGet.json();
-  dump.stores = dump.stores || {};
-
-  const admissao = acharAdmissao(dump, leitoAlvo);
-  const pacientes = dump.stores.patients || [];
+  const pacientes = await buscarTabela(token, 'patients');
   const paciente = pacientes.find((p) => p.id === admissao.patientId);
   const nomePaciente = paciente ? (paciente.nomeCompleto || paciente.iniciais) : '?';
   let resumoSaida = '';
@@ -122,8 +153,7 @@ async function main() {
       console.error('nenhum sinal vital informado (--fc, --sato2, --pa, --tax).');
       process.exit(1);
     }
-    dump.stores.vitalSigns = dump.stores.vitalSigns || [];
-    dump.stores.vitalSigns.push(registro);
+    await upsert(token, 'vitalSigns', registro);
     resumoSaida = `PA ${registro.paSistolica ?? '?'}/${registro.paDiastolica ?? '?'} | FC ${registro.fc ?? '—'} | SatO2 ${registro.sato2 ?? '—'} | Tax ${registro.tax ?? '—'}`;
   } else if (ABAS_EXAME.includes(abaAlvo)) {
     const achados = {};
@@ -134,15 +164,15 @@ async function main() {
       console.error(`nenhum lab informado. campos aceitos: ${LAB_FIELDS.join(', ')} (ou --resumo).`);
       process.exit(1);
     }
-    dump.stores.exams = dump.stores.exams || [];
+    const exames = await buscarTabela(token, 'exams');
     const hoje = Date.now();
-    let exame = dump.stores.exams.find((e) => e.admissionId === admissao.id && e.categoria !== 'imagem' && mesmaData(e.data, hoje));
+    let exame = exames.find((e) => e.admissionId === admissao.id && e.categoria !== 'imagem' && mesmaData(e.data, hoje));
     if (!exame) {
       exame = { id: crypto.randomUUID(), admissionId: admissao.id, categoria: 'lab', data: hoje, resultadoResumo: '', labsBasicos: {} };
-      dump.stores.exams.push(exame);
     }
     exame.labsBasicos = { ...(exame.labsBasicos || {}), ...achados };
     if (args.resumo) exame.resultadoResumo = `${exame.resultadoResumo ? exame.resultadoResumo + '\n\n' : ''}${args.resumo}`;
+    await upsert(token, 'exams', exame);
     resumoSaida = JSON.stringify(exame.labsBasicos);
   } else {
     const campo = CAMPO_TEXTO_POR_ABA[abaAlvo];
@@ -160,19 +190,13 @@ async function main() {
       const atual = admissao[campo] || '';
       admissao[campo] = `${atual}${atual ? '\n\n' : ''}${args.texto}`;
     }
+    await upsert(token, 'admissions', admissao);
     resumoSaida = admissao[campo];
   }
-
-  const respPost = await fetch(`${URL_SYNC}?code=${encodeURIComponent(codigo)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(dump),
-  });
-  if (!respPost.ok) { console.error('falha ao enviar pra nuvem:', respPost.status); process.exit(1); }
 
   console.log(`OK — ${admissao.leito} (${nomePaciente}), aba "${args.aba}" atualizada.`);
   console.log('---');
   console.log(resumoSaida);
 }
 
-main().catch((e) => { console.error(e.message); process.exit(1); });
+main().catch((e) => { console.error(e.message); process.exitCode = 1; });

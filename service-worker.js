@@ -6,22 +6,21 @@
 // novo a cada versão, mesmo se algum cache HTTP intermediário guardar a URL
 // sem query — então o nome do arquivo aqui precisa bater com o que o HTML
 // realmente pede, senão o precache instala uma URL que ninguém vai pedir.
-const CACHE = 'wards-v52';
+const CACHE = 'wards-v60';
 const ARQUIVOS = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './css/app.css?v=52',
-  './js/db.js?v=52',
-  './js/matching.js?v=52',
-  './js/archive.js?v=52',
-  './js/report.js?v=52',
-  './js/backup.js?v=52',
-  './js/sync.js?v=52',
-  './js/dialog.js?v=52',
-  './js/handwriting.js?v=52',
-  './js/scribble.js?v=52',
-  './js/app.js?v=52',
+  './css/app.css?v=60',
+  './js/supabaseClient.js?v=60',
+  './js/db.js?v=60',
+  './js/matching.js?v=60',
+  './js/archive.js?v=60',
+  './js/report.js?v=60',
+  './js/dialog.js?v=60',
+  './js/handwriting.js?v=60',
+  './js/scribble.js?v=60',
+  './js/app.js?v=60',
   './icons/icon.svg',
 ];
 
@@ -41,11 +40,12 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  // /api/* é sempre dinâmico (dado de sincronização mudando o tempo todo) —
-  // nunca cachear, sempre ir direto na rede. Cache-first aqui já causou um
-  // bug real: a primeira leitura vazia ficava presa no cache pra sempre,
-  // escondendo tudo que era sincronizado depois.
-  if (new URL(event.request.url).pathname.startsWith('/api/')) return;
+  // Só cacheia o próprio app shell — qualquer coisa de outro domínio
+  // (Supabase, fontes do Google, o CDN do client do Supabase) vai direto
+  // pra rede, nunca por cache: dado vindo do banco precisa ser sempre o
+  // mais recente, nunca uma cópia presa do primeiro load (bug real que já
+  // aconteceu aqui antes, com o antigo endpoint de sincronização).
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

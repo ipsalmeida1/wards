@@ -1,3 +1,6 @@
 .vercel
 .env*
 node_modules
+# Dados reais de paciente em texto puro — script de migração único, rodado
+# no console do navegador; nunca deve ir pro repositório.
+scripts/migrar-dados-italo.console.js

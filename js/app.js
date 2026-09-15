@@ -37,9 +37,15 @@ function fmtData(ts, comHora) {
 function render(html) { $app().innerHTML = html; }
 function nav(hash) { location.hash = hash; }
 
-// ---------- boot ----------
+// ---------- boot / sessão ----------
+
+let sessaoAtual = null;
+SB.auth.onAuthStateChange((_evento, session) => { sessaoAtual = session; });
 
 async function boot() {
+  const { data } = await SB.auth.getSession();
+  sessaoAtual = data.session;
+  if (!sessaoAtual) return viewLogin();
   await Archive.executarSeNecessario();
   renderRoute();
 }
@@ -47,6 +53,8 @@ async function boot() {
 window.addEventListener('hashchange', renderRoute);
 
 function renderRoute() {
+  if (!sessaoAtual) return viewLogin();
+
   const hash = location.hash.slice(1) || '/';
   const parts = hash.split('/').filter(Boolean);
 
@@ -59,11 +67,93 @@ function renderRoute() {
   if (parts[0] === 'exame-ver' && parts[1]) return viewExamDetail(parts[1]);
   if (parts[0] === 'relatorio') return viewReport();
   if (parts[0] === 'arquivo') return viewArchiveList();
-  if (parts[0] === 'backup') return viewBackup();
   return viewPatientList();
 }
 
+// Sem card/shell — tela isolada, antes de qualquer coisa do app aparecer.
+let modoCadastroLogin = false;
+
+function viewLogin() {
+  render(`
+    <div style="max-width:380px;margin:15vh auto 0;padding:0 20px">
+      <h1 style="text-align:center;margin-bottom:24px;font-size:26px">Wards</h1>
+      <div class="card">
+        <label>E-mail</label>
+        <input id="login-email" type="email" autocomplete="email" inputmode="email">
+        <label>Senha</label>
+        <input id="login-senha" type="password" autocomplete="${modoCadastroLogin ? 'new-password' : 'current-password'}">
+        <button class="btn btn-primary" onclick="onEntrarOuCadastrar()">${modoCadastroLogin ? 'Criar conta' : 'Entrar'}</button>
+        <button class="btn btn-ghost" onclick="onAlternarModoLogin()">${modoCadastroLogin ? 'Já tenho conta' : 'Criar conta nova'}</button>
+        <div id="login-msg" class="sub" style="margin-top:8px"></div>
+      </div>
+    </div>
+  `);
+  document.getElementById('login-senha').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') onEntrarOuCadastrar();
+  });
+}
+
+function onAlternarModoLogin() {
+  modoCadastroLogin = !modoCadastroLogin;
+  viewLogin();
+}
+
+async function onEntrarOuCadastrar() {
+  const email = document.getElementById('login-email').value.trim();
+  const senha = document.getElementById('login-senha').value;
+  const msgEl = document.getElementById('login-msg');
+  msgEl.style.color = 'var(--danger)';
+  msgEl.textContent = '';
+  if (!email || !senha) { msgEl.textContent = 'Preencha e-mail e senha.'; return; }
+
+  if (modoCadastroLogin) {
+    const { data, error } = await SB.auth.signUp({ email, password: senha });
+    if (error) { msgEl.textContent = error.message; return; }
+    if (!data.session) {
+      msgEl.style.color = 'var(--ink-mute)';
+      msgEl.textContent = 'Conta criada — confirma pelo link que chegou no seu e-mail antes de entrar.';
+      return;
+    }
+    sessaoAtual = data.session;
+  } else {
+    const { data, error } = await SB.auth.signInWithPassword({ email, password: senha });
+    if (error) { msgEl.textContent = 'E-mail ou senha incorretos.'; return; }
+    sessaoAtual = data.session;
+  }
+  await Archive.executarSeNecessario();
+  renderRoute();
+}
+
+async function onSair() {
+  await SB.auth.signOut();
+  sessaoAtual = null;
+  viewLogin();
+}
+
 // ---------- data helpers ----------
+
+// Anexos (fotos, laudos, anotações à mão) não guardam mais o arquivo dentro
+// do próprio registro — um Blob não sobrevive a virar JSON pra mandar pro
+// Postgres. O arquivo de verdade sobe pro bucket privado "anexos" (Supabase
+// Storage), sob `<user_id>/<attachment_id>`; o registro guarda só esse
+// caminho em `storagePath`. Como o bucket é privado, exibir a imagem exige
+// uma URL assinada (expira, mas 1h é de sobra pra abrir a tela e olhar).
+async function subirAnexo(attachmentId, blob) {
+  const path = `${sessaoAtual.user.id}/${attachmentId}`;
+  const { error } = await SB.storage.from('anexos').upload(path, blob, {
+    upsert: true, contentType: blob.type || 'application/octet-stream',
+  });
+  if (error) throw error;
+  return path;
+}
+async function urlAssinada(storagePath) {
+  if (!storagePath) return '';
+  const { data, error } = await SB.storage.from('anexos').createSignedUrl(storagePath, 3600);
+  return error ? '' : data.signedUrl;
+}
+async function comUrlsAssinadas(anexos) {
+  return Promise.all(anexos.map(async (a) => ({ ...a, url: await urlAssinada(a.storagePath) })));
+}
 
 async function getAdmission(id) { return DB.get('admissions', id); }
 async function getPatient(id) { return DB.get('patients', id); }
@@ -169,7 +259,7 @@ async function viewPatientList(busca = '') {
 
   shell({
     title: 'Pacientes do dia',
-    right: `<button class="icon-btn" onclick="nav('backup')">⇅</button><button class="icon-btn" onclick="nav('arquivo')">🗄️</button><button class="icon-btn" onclick="nav('relatorio')">📊</button>`,
+    right: `<button class="icon-btn" onclick="nav('arquivo')">🗄️</button><button class="icon-btn" onclick="nav('relatorio')">📊</button><button class="icon-btn" onclick="onSair()" title="Sair" aria-label="Sair">⏻</button>`,
     body: `
       <input class="searchbar" placeholder="Leito, iniciais ou motivo" value="${esc(busca)}"
         oninput="viewPatientList(this.value)">
@@ -277,7 +367,7 @@ async function onExcluirAdmissao(admissionId) {
 }
 
 async function excluirAdmissaoDeVez(admissionId) {
-  const admission = await getAdmission(admissionId);
+  const admission = await DB.get('admissions', admissionId);
   if (!admission) return;
 
   const roundEntries = await DB.where('roundEntries', (r) => r.admissionId === admissionId);
@@ -303,7 +393,7 @@ async function excluirAdmissaoDeVez(admissionId) {
   const patientId = admission.patientId;
   await DB.remove('admissions', admissionId);
 
-  const outrasAdmissoes = await DB.where('admissions', (a) => a.patientId === patientId);
+  const outrasAdmissoes = await DB.where('admissions', (a) => a.patientId === patientId && a.id !== admissionId);
   if (!outrasAdmissoes.length) {
     await DB.remove('patients', patientId);
     const comorbidades = await DB.where('comorbidades', (c) => c.patientId === patientId);
@@ -311,21 +401,6 @@ async function excluirAdmissaoDeVez(admissionId) {
   }
 
   viewPatientList();
-
-  // Sincroniza só EMPURRANDO o estado local (sem puxar antes) — puxar
-  // primeiro reintroduziria localmente a mesma admissão que acabou de ser
-  // apagada, já que a sincronização normal nunca apaga nada (só soma). Se o
-  // outro aparelho tiver mudanças próprias ainda não sincronizadas, elas
-  // podem ser perdidas nessa hora — risco aceitável pra uso pessoal, mas
-  // real: apagar é seguro sozinho, não durante uma edição concorrente longa.
-  if (Sync.temCodigo()) {
-    (async () => {
-      try {
-        const mesclado = await comLimiteDeTempo(Backup.montarDump(), 8000);
-        await Sync.enviarNuvem(mesclado);
-      } catch { /* offline — a próxima sincronização normal ainda resolve, exceto se o outro lado reintroduzir antes */ }
-    })();
-  }
 }
 
 // ---------- novo paciente ----------
@@ -362,7 +437,7 @@ async function salvarNovoPaciente() {
 const TABS = ['hda', 'comorbidades', 'vitais', 'evolucoes', 'exames', 'planos', 'prescricoes', 'pareceres'];
 const TAB_LABEL = {
   hda: 'HDA', comorbidades: 'A.P', vitais: 'Sinais Vitais', exames: 'Exames',
-  pareceres: 'Pareceres', planos: 'Planos', evolucoes: 'Evoluções',
+  pareceres: 'Pareceres', planos: 'Planos', evolucoes: 'Bloco de Notas',
   prescricoes: 'Prescrições',
 };
 
@@ -386,18 +461,15 @@ async function viewPatientDetail(admissionId, tab) {
   else if (tab === 'prescricoes') body = await tabPrescricoes(admission);
   else body = await tabEvolucoes(admission);
 
-  const botaoSalvarEvolucao = tab === 'evolucoes'
-    ? `<button class="btn btn-primary no-print" style="width:auto;margin-top:0;padding:8px 18px" onclick="onSalvarEvolucao('${admissionId}')">Salvar</button>`
-    : '';
-
   // O FAB só existe na aba Exames — nas outras, cada uma já tem seu próprio
-  // botão de ação no lugar certo (Salvar, Adicionar, Adicionar parecer...),
-  // e um FAB fixo por cima de todas as abas só criava um alvo de toque
-  // errado bem em cima de onde a ação de cada aba normalmente fica.
+  // botão de ação no lugar certo (Adicionar, Adicionar parecer...), e um FAB
+  // fixo por cima de todas as abas só criava um alvo de toque errado bem em
+  // cima de onde a ação de cada aba normalmente fica. Bloco de Notas não tem
+  // botão próprio nenhum — grava sozinho (ver onDigitarNotepad).
   shell({
     title: `${admission.leito} — ${patient?.nomeCompleto || patient?.iniciais || ''}`,
     back: '/',
-    right: `${botaoSalvarEvolucao}<button class="icon-btn no-print" onclick="window.print()">🖨️</button>`,
+    right: `<button class="icon-btn no-print" onclick="window.print()">🖨️</button>`,
     body: `<div class="tabs">${tabsHtml}</div>${body}`,
     fabHtml: tab === 'exames'
       ? `<button class="btn btn-primary" style="width:100%" onclick="nav('exame/${admissionId}')">+ Exame</button>`
@@ -405,6 +477,7 @@ async function viewPatientDetail(admissionId, tab) {
   });
 
   if (tab === 'vitais' && vitaisChartPontos) desenharTendencia('vitais-canvas', vitaisChartPontos);
+  if (tab === 'evolucoes') autoResizeTextarea(document.getElementById('edit-evolucao'));
 }
 
 const STATUS_LABEL = { ativo: 'Ativo', alta: 'Alta', obito: 'Óbito', arquivado: 'Arquivado' };
@@ -477,9 +550,9 @@ function extrairResumoPorData(texto) {
   }).filter((l) => l.texto);
 }
 
-// Atualiza a faixa de resumo ao vivo, a cada tecla — sem esperar "Salvar".
-// Só mexe no DOM (cria/atualiza/remove a faixa), não toca no banco; o texto
-// "de verdade" só grava mesmo quando o Salvar é apertado, igual antes.
+// Atualiza a faixa de resumo ao vivo, a cada tecla. Só mexe no DOM (cria/
+// atualiza/remove a faixa) — quem grava de verdade no banco é o
+// salvarHDADebounced, chamado à parte no mesmo oninput.
 function onDigitarHDA(campo) {
   const wrap = campo.closest('.hda-com-resumo');
   const linhas = extrairResumoPorData(campo.value);
@@ -506,14 +579,11 @@ async function tabHDA(admission) {
     .sort((a, b) => b.criadoEm - a.criadoEm);
   const resumoPorData = extrairResumoPorData(admission.hda);
 
-  limparObjectUrls();
-  const thumbs = anexos.map((a) => {
-    const url = URL.createObjectURL(a.blob);
-    objectUrlsAtuais.push(url);
+  const thumbs = (await comUrlsAssinadas(anexos)).map((a) => {
     return `
       <div class="card" style="padding:8px">
-        <a href="${url}" target="_blank" rel="noopener">
-          <img src="${url}" alt="Anotação da HDA" style="width:100%;border-radius:8px;display:block">
+        <a href="${a.url}" target="_blank" rel="noopener">
+          <img src="${a.url}" alt="Anotação da HDA" style="width:100%;border-radius:8px;display:block">
         </a>
         <div class="row" style="margin-top:6px">
           ${a.tracos ? `<button class="btn btn-ghost" style="width:auto" onclick="onEditarAnotacao('${a.id}', function(){ viewPatientDetail('${admission.id}','hda'); })">✏️ Editar</button>` : '<span></span>'}
@@ -526,7 +596,7 @@ async function tabHDA(admission) {
   return `
     ${statusCard(admission)}
     <label>Motivo da admissão</label>
-    <input id="edit-motivo" type="text" value="${esc(admission.motivoAdmissao || '')}">
+    <input id="edit-motivo" type="text" value="${esc(admission.motivoAdmissao || '')}" oninput="salvarHDADebounced('${admission.id}')">
     <label>HDA</label>
     <div class="hda-com-resumo">
       ${resumoPorData.length ? `
@@ -534,9 +604,9 @@ async function tabHDA(admission) {
           ${resumoPorData.map((l) => `<strong>${esc(l.data)}:</strong> ${renderTexto(l.texto)}`).join('<br>')}
         </div>
       ` : ''}
-      <textarea id="edit-hda" oninput="onDigitarHDA(this)" placeholder="Envolva um trecho com ==assim== pra destacar. Escrever cronologicamente? Use &quot;dia 25/08: ...&quot; pra ganhar um resumo por data fixo no topo." style="min-height:260px">${esc(admission.hda || '')}</textarea>
+      <textarea id="edit-hda" oninput="onDigitarHDA(this); salvarHDADebounced('${admission.id}')" placeholder="Envolva um trecho com ==assim== pra destacar. Escrever cronologicamente? Use &quot;dia 25/08: ...&quot; pra ganhar um resumo por data fixo no topo." style="min-height:260px">${esc(admission.hda || '')}</textarea>
     </div>
-    <button class="btn btn-secondary" onclick="onSalvarHDA('${admission.id}')">Salvar</button>
+    <div id="hda-status" class="sub" style="text-align:right;margin-top:4px">${(admission.motivoAdmissao || admission.hda) ? 'Salvo' : ''}</div>
 
     <div class="section-title">Anotações à mão</div>
     ${thumbs ? `<div class="wf-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:10px">${thumbs}</div>` : ''}
@@ -589,12 +659,21 @@ async function onMoverProblema(problemaId, admissionId, direcao) {
   viewPatientDetail(admissionId, 'hda');
 }
 
-async function onSalvarHDA(admissionId) {
-  const admission = await getAdmission(admissionId);
-  admission.motivoAdmissao = document.getElementById('edit-motivo').value.trim();
-  admission.hda = document.getElementById('edit-hda').value.trim();
-  await DB.put('admissions', admission);
-  viewPatientDetail(admissionId, 'hda');
+// Sem botão "Salvar": motivo + HDA gravam sozinhos 600ms depois de parar de
+// digitar (mesmo esquema do Bloco de Notas, ver onDigitarNotepad).
+let debounceSalvarHDA = null;
+function salvarHDADebounced(admissionId) {
+  const statusEl = document.getElementById('hda-status');
+  if (statusEl) statusEl.textContent = 'Salvando…';
+  clearTimeout(debounceSalvarHDA);
+  debounceSalvarHDA = setTimeout(async () => {
+    const admission = await getAdmission(admissionId);
+    admission.motivoAdmissao = document.getElementById('edit-motivo').value.trim();
+    admission.hda = document.getElementById('edit-hda').value.trim();
+    await DB.put('admissions', admission);
+    const statusAtual = document.getElementById('hda-status');
+    if (statusAtual) statusAtual.textContent = `Salvo às ${fmtData(Date.now(), true).split(' ')[1]}`;
+  }, 600);
 }
 
 function onEscreverAmaoHDA(admissionId) {
@@ -602,7 +681,7 @@ function onEscreverAmaoHDA(admissionId) {
   Scribble.abrir({
     titulo: 'HDA',
     valorInicial: campo.value,
-    onSalvar: (texto) => { campo.value = texto; onDigitarHDA(campo); },
+    onSalvar: (texto) => { campo.value = texto; onDigitarHDA(campo); salvarHDADebounced(admissionId); },
   });
 }
 
@@ -622,7 +701,7 @@ function onEditarAnotacao(attachmentId, aoSalvar) {
     Handwriting.abrir({
       tracosIniciais: anexo.tracos || null,
       onSave: async (blob, tracos) => {
-        anexo.blob = blob;
+        await subirAnexo(anexo.id, blob);
         anexo.tracos = tracos;
         await DB.put('attachments', anexo);
         aoSalvar();
@@ -718,12 +797,6 @@ async function tabExames(admission) {
 
 // ---------- detalhe do exame + fotos (laudo, tomografia etc.) ----------
 
-let objectUrlsAtuais = [];
-function limparObjectUrls() {
-  objectUrlsAtuais.forEach((u) => URL.revokeObjectURL(u));
-  objectUrlsAtuais = [];
-}
-
 async function viewExamDetail(examId) {
   const exame = await DB.get('exams', examId);
   if (!exame) return viewPatientList();
@@ -731,14 +804,11 @@ async function viewExamDetail(examId) {
   const anexos = (await DB.where('attachments', (a) => a.examId === examId))
     .sort((a, b) => a.criadoEm - b.criadoEm);
 
-  limparObjectUrls();
-  const thumbs = anexos.map((a) => {
-    const url = URL.createObjectURL(a.blob);
-    objectUrlsAtuais.push(url);
+  const thumbs = (await comUrlsAssinadas(anexos)).map((a) => {
     return `
       <div class="card" style="padding:8px">
-        <a href="${url}" target="_blank" rel="noopener">
-          <img src="${url}" alt="Anexo do exame" style="width:100%;border-radius:8px;display:block">
+        <a href="${a.url}" target="_blank" rel="noopener">
+          <img src="${a.url}" alt="Anexo do exame" style="width:100%;border-radius:8px;display:block">
         </a>
         <div class="row" style="margin-top:6px">
           ${a.tracos ? `<button class="btn btn-ghost" style="width:auto" onclick="onEditarAnotacao('${a.id}', function(){ viewExamDetail('${examId}'); })">✏️ Editar</button>` : '<span></span>'}
@@ -776,8 +846,10 @@ async function viewExamDetail(examId) {
 
 async function onAddAttachment(examId, fileList) {
   for (const file of fileList) {
+    const id = newId();
+    const storagePath = await subirAnexo(id, file);
     await DB.put('attachments', {
-      id: newId(), examId, tipo: file.type, blob: file, criadoEm: Date.now(),
+      id, examId, tipo: file.type, storagePath, criadoEm: Date.now(),
     });
   }
   viewExamDetail(examId);
@@ -786,7 +858,9 @@ async function onAddAttachment(examId, fileList) {
 function onEscreverAmaoExame(examId) {
   Handwriting.abrir({
     onSave: async (blob, tracos) => {
-      await DB.put('attachments', { id: newId(), examId, tipo: 'image/png', blob, tracos, criadoEm: Date.now() });
+      const id = newId();
+      const storagePath = await subirAnexo(id, blob);
+      await DB.put('attachments', { id, examId, tipo: 'image/png', storagePath, tracos, criadoEm: Date.now() });
       viewExamDetail(examId);
     },
   });
@@ -876,15 +950,12 @@ async function tabPrescricoes(admission) {
   const anexos = (await DB.where('attachments', (a) => a.admissionId === admission.id && a.secao !== 'hda'))
     .sort((a, b) => b.criadoEm - a.criadoEm);
 
-  limparObjectUrls();
-  const thumbs = anexos.map((a) => {
-    const url = URL.createObjectURL(a.blob);
-    objectUrlsAtuais.push(url);
+  const thumbs = (await comUrlsAssinadas(anexos)).map((a) => {
     return `
       <div class="card" style="padding:8px">
         <div class="sub" style="margin-bottom:6px">${fmtData(a.criadoEm, true)}</div>
-        <a href="${url}" target="_blank" rel="noopener">
-          <img src="${url}" alt="Foto de prescrição" style="width:100%;border-radius:8px;display:block">
+        <a href="${a.url}" target="_blank" rel="noopener">
+          <img src="${a.url}" alt="Foto de prescrição" style="width:100%;border-radius:8px;display:block">
         </a>
         <div class="row" style="margin-top:6px">
           ${a.tracos ? `<button class="btn btn-ghost" style="width:auto" onclick="onEditarAnotacao('${a.id}', function(){ viewPatientDetail('${admission.id}','prescricoes'); })">✏️ Editar</button>` : '<span></span>'}
@@ -904,14 +975,16 @@ async function tabPrescricoes(admission) {
 
     <div class="section-title">Observações</div>
     <label>Possíveis usos e datas de uso de ATB</label>
-    <textarea id="edit-prescricao-obs" placeholder="Ex.: Ceftriaxona 1g EV 12/12h desde 07/09 — previsão de 7 dias. Envolva um trecho com ==assim== pra destacar.">${esc(admission.prescricaoObs || '')}</textarea>
-    <button class="btn btn-secondary" onclick="onSalvarPrescricaoObs('${admission.id}')">Salvar</button>
+    <textarea id="edit-prescricao-obs" oninput="salvarPrescricaoObsDebounced('${admission.id}')" placeholder="Ex.: Ceftriaxona 1g EV 12/12h desde 07/09 — previsão de 7 dias. Envolva um trecho com ==assim== pra destacar.">${esc(admission.prescricaoObs || '')}</textarea>
+    <div id="prescricao-status" class="sub" style="text-align:right;margin-top:4px">${admission.prescricaoObs ? 'Salvo' : ''}</div>
   `;
 }
 
 async function onAddPrescricaoFoto(admissionId, fileList) {
   for (const file of fileList) {
-    await DB.put('attachments', { id: newId(), admissionId, secao: 'prescricao', tipo: file.type, blob: file, criadoEm: Date.now() });
+    const id = newId();
+    const storagePath = await subirAnexo(id, file);
+    await DB.put('attachments', { id, admissionId, secao: 'prescricao', tipo: file.type, storagePath, criadoEm: Date.now() });
   }
   viewPatientDetail(admissionId, 'prescricoes');
 }
@@ -926,15 +999,23 @@ function onEscreverAmaoPrescricao(admissionId) {
   Scribble.abrir({
     titulo: 'Observações da prescrição',
     valorInicial: campo.value,
-    onSalvar: (texto) => { campo.value = texto; },
+    onSalvar: (texto) => { campo.value = texto; salvarPrescricaoObsDebounced(admissionId); },
   });
 }
 
-async function onSalvarPrescricaoObs(admissionId) {
-  const admission = await getAdmission(admissionId);
-  admission.prescricaoObs = document.getElementById('edit-prescricao-obs').value.trim();
-  await DB.put('admissions', admission);
-  viewPatientDetail(admissionId, 'prescricoes');
+// Sem botão "Salvar": mesmo esquema de debounce de 600ms do HDA/Notepad.
+let debounceSalvarPrescricaoObs = null;
+function salvarPrescricaoObsDebounced(admissionId) {
+  const statusEl = document.getElementById('prescricao-status');
+  if (statusEl) statusEl.textContent = 'Salvando…';
+  clearTimeout(debounceSalvarPrescricaoObs);
+  debounceSalvarPrescricaoObs = setTimeout(async () => {
+    const admission = await getAdmission(admissionId);
+    admission.prescricaoObs = document.getElementById('edit-prescricao-obs').value.trim();
+    await DB.put('admissions', admission);
+    const statusAtual = document.getElementById('prescricao-status');
+    if (statusAtual) statusAtual.textContent = `Salvo às ${fmtData(Date.now(), true).split(' ')[1]}`;
+  }, 600);
 }
 
 // Evoluções é uma aba corrida (um único texto indo crescendo, tipo
@@ -944,27 +1025,18 @@ async function onSalvarPrescricaoObs(admissionId) {
 // precisam de campos numéricos de verdade pra dar gráfico de tendência;
 // não dá pra extrair isso de forma confiável de texto livre.
 async function tabEvolucoes(admission) {
-  // Puxa a versão mais recente da nuvem antes de mostrar o texto — a ideia
-  // é que, com internet, você sempre veja o que o outro aparelho escreveu
-  // por último (como o protectedtext), não uma cópia local que pode estar
-  // desatualizada. Sem internet (ou com internet lenta/travada — daí o
-  // limite de tempo), cai de volta pra última versão que já tinha aqui.
-  await sincronizarSeOnline();
-  admission = (await getAdmission(admission.id)) || admission;
-
+  // A sincronização (pull) já rodou em viewPatientDetail, antes de qualquer
+  // aba — aqui só falta a migração de dados antigos.
   await migrarEvolucaoAntiga(admission);
 
   const anexos = (await DB.where('attachments', (a) => a.admissionId === admission.id && a.secao === 'evolucao'))
     .sort((a, b) => b.criadoEm - a.criadoEm);
 
-  limparObjectUrls();
-  const thumbs = anexos.map((a) => {
-    const url = URL.createObjectURL(a.blob);
-    objectUrlsAtuais.push(url);
+  const thumbs = (await comUrlsAssinadas(anexos)).map((a) => {
     return `
       <div class="card" style="padding:8px">
-        <a href="${url}" target="_blank" rel="noopener">
-          <img src="${url}" alt="Anotação da evolução" style="width:100%;border-radius:8px;display:block">
+        <a href="${a.url}" target="_blank" rel="noopener">
+          <img src="${a.url}" alt="Anotação do bloco de notas" style="width:100%;border-radius:8px;display:block">
         </a>
         <div class="row" style="margin-top:6px">
           ${a.tracos ? `<button class="btn btn-ghost" style="width:auto" onclick="onEditarAnotacao('${a.id}', function(){ viewPatientDetail('${admission.id}','evolucoes'); })">✏️ Editar</button>` : '<span></span>'}
@@ -975,7 +1047,8 @@ async function tabEvolucoes(admission) {
   }).join('');
 
   return `
-    <textarea id="edit-evolucao" placeholder="Escreva a evolução aqui. Toque no microfone do teclado pra ditar. Envolva um trecho com ==assim== pra destacar. Valores de lab escritos aqui (ex.: K 4,0 Cl 105 Hb 12) vão sozinhos pra aba Exames ao salvar." style="min-height:420px">${esc(admission.evolucaoTexto || '')}</textarea>
+    <textarea id="edit-evolucao" oninput="onDigitarNotepad(this,'${admission.id}')" placeholder="Escreva aqui. Toque no microfone do teclado pra ditar. Envolva um trecho com ==assim== pra destacar. Valores de lab escritos aqui (ex.: K 4,0 Cl 105 Hb 12) vão sozinhos pra aba Exames conforme você for digitando." style="min-height:420px">${esc(admission.evolucaoTexto || '')}</textarea>
+    <div id="notepad-status" class="sub" style="text-align:right;margin-top:4px">${admission.evolucaoTexto ? 'Salvo' : ''}</div>
 
     <label style="margin-top:14px">Anexar laudo de exame de imagem (câmera ou galeria)</label>
     <input type="file" accept="image/*" multiple onchange="onAnexarLaudoImagem('${admission.id}', this.files)">
@@ -1063,70 +1136,38 @@ async function mesclarLabsHoje(admissionId, achados) {
   await DB.put('exams', hoje);
 }
 
-// Corre uma promise contra um prazo — sem isso, uma rede de hospital que
-// trava (em vez de simplesmente falhar) prenderia a tela esperando pra
-// sempre em vez de cair pro que já está salvo localmente.
-function comLimiteDeTempo(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('tempo esgotado')), ms)),
-  ]);
+// Caixa "infinita": em vez de altura fixa com scroll interno, ela cresce pra
+// caber o texto todo — sem limite. Chamado a cada tecla e uma vez logo após
+// o render (o valor inicial já pode ser mais alto que os 420px de partida).
+function autoResizeTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
 }
 
-// Só busca e importa (sem mandar nada de volta) — usado ao ABRIR a aba, pra
-// mostrar o que há de mais recente na nuvem sem precisar ter editado nada.
-async function sincronizarSeOnline() {
-  if (!Sync.temCodigo()) return;
-  try {
-    const remoto = await comLimiteDeTempo(Sync.buscarNuvem(), 5000);
-    await Backup.importarDump(remoto);
-  } catch { /* offline ou lento — mostra o que já tinha localmente */ }
-}
-
-async function onSalvarEvolucao(admissionId) {
-  const admission = await getAdmission(admissionId);
-  const texto = document.getElementById('edit-evolucao').value;
-  admission.evolucaoTexto = texto;
-  await DB.put('admissions', admission);
-
-  const achados = extrairLabsDoTexto(texto);
-  if (Object.keys(achados).length) await mesclarLabsHoje(admissionId, achados);
-
-  viewPatientDetail(admissionId, 'evolucoes');
-  if (Sync.temCodigo()) sincronizarEvolucaoComPrioridade(admissionId, texto);
-}
-
-// Sincronizar puxa a nuvem e sobrescreve o registro local antes de mandar de
-// volta — o que é perigoso logo depois de salvar, porque se a nuvem tinha
-// uma versão diferente desse mesmo paciente, o texto que você ACABOU de
-// digitar seria descartado antes mesmo de ser enviado. Por isso, depois de
-// importar, esse texto específico é reaplicado por cima — ele sempre vence
-// pra esse campo nesse save, o resto do registro (vindo de outras abas/
-// aparelhos) fica mesclado normalmente.
-//
-// Um segundo cuidado, mais sutil: se o usuário aperta Salvar de novo antes
-// da sincronização anterior terminar (ex.: rede lenta), as duas ficam em
-// voo ao mesmo tempo — e como são requisições de rede independentes, a MAIS
-// VELHA pode responder DEPOIS da mais nova e sobrescrever a nuvem com um
-// texto antigo, mesmo tendo sido disparada primeiro. `evolucaoSyncSeq` marca
-// qual foi a chamada mais recente; toda sincronização confere, bem antes de
-// mandar pra nuvem, se ainda é a mais nova — se não for, desiste em vez de
-// publicar um texto que já foi superado.
-let evolucaoSyncSeq = 0;
-async function sincronizarEvolucaoComPrioridade(admissionId, textoRecemSalvo) {
-  const minhaSeq = ++evolucaoSyncSeq;
-  try {
-    const remoto = await comLimiteDeTempo(Sync.buscarNuvem(), 8000);
-    await Backup.importarDump(remoto);
+// Sem botão "Salvar": tudo — o texto em si e a sincronização com a aba
+// Exames — vai sozinho pro banco 600ms depois de parar de digitar. Não
+// re-renderiza a tela nesse meio tempo (perderia o cursor no meio da
+// frase); só atualiza o textinho de status, igual um "Salvo" de editor de
+// texto comum, pra dar certeza visível de que já gravou sem precisar clicar
+// em nada.
+let debounceSyncNotepad = null;
+function onDigitarNotepad(campo, admissionId) {
+  autoResizeTextarea(campo);
+  const statusEl = document.getElementById('notepad-status');
+  if (statusEl) statusEl.textContent = 'Salvando…';
+  clearTimeout(debounceSyncNotepad);
+  debounceSyncNotepad = setTimeout(async () => {
+    const texto = campo.value;
     const admission = await getAdmission(admissionId);
-    if (admission) {
-      admission.evolucaoTexto = textoRecemSalvo;
-      await DB.put('admissions', admission);
-    }
-    if (minhaSeq !== evolucaoSyncSeq) return; // uma chamada mais nova já assumiu — não publica algo desatualizado
-    const mesclado = await Backup.montarDump();
-    await Sync.enviarNuvem(mesclado);
-  } catch { /* offline ou lento — fica salvo local, sincroniza na próxima vez que houver rede */ }
+    admission.evolucaoTexto = texto;
+    await DB.put('admissions', admission);
+
+    const achados = extrairLabsDoTexto(texto);
+    if (Object.keys(achados).length) await mesclarLabsHoje(admissionId, achados);
+
+    const statusAtual = document.getElementById('notepad-status');
+    if (statusAtual) statusAtual.textContent = `Salvo às ${fmtData(Date.now(), true).split(' ')[1]}`;
+  }, 600);
 }
 
 async function onAnexarLaudoImagem(admissionId, fileList) {
@@ -1134,7 +1175,9 @@ async function onAnexarLaudoImagem(admissionId, fileList) {
   const exame = { id: newId(), admissionId, categoria: 'imagem', data: Date.now(), tipo: '', resultadoResumo: '', labsBasicos: {} };
   await DB.put('exams', exame);
   for (const file of fileList) {
-    await DB.put('attachments', { id: newId(), examId: exame.id, tipo: file.type, blob: file, criadoEm: Date.now() });
+    const id = newId();
+    const storagePath = await subirAnexo(id, file);
+    await DB.put('attachments', { id, examId: exame.id, tipo: file.type, storagePath, criadoEm: Date.now() });
   }
   viewPatientDetail(admissionId, 'evolucoes');
   Dialog.avisar('Laudo adicionado à aba Exames.', { tipo: 'sucesso' });
@@ -1145,7 +1188,7 @@ function onEscreverAmaoEvolucao(admissionId) {
   Scribble.abrir({
     titulo: 'Evolução',
     valorInicial: campo.value,
-    onSalvar: (texto) => { campo.value = texto; },
+    onSalvar: (texto) => { campo.value = texto; onDigitarNotepad(campo, admissionId); },
   });
 }
 
@@ -1358,19 +1401,19 @@ function desenharTendencia(canvasId, pontos) {
   const px = (x) => PAD + ((x - minX) / rangeX) * (W - PAD * 2);
   const py = (y) => H - PAD - ((y - minY) / rangeY) * (H - PAD * 2);
 
-  ctx.strokeStyle = '#e0cfb8';
+  ctx.strokeStyle = '#e0e0e0';
   ctx.beginPath(); ctx.moveTo(PAD, H - PAD); ctx.lineTo(W - PAD, H - PAD); ctx.stroke();
 
-  ctx.strokeStyle = '#354f44';
+  ctx.strokeStyle = '#000000';
   ctx.lineWidth = 2.5;
   ctx.beginPath();
   pontos.forEach((p, i) => (i === 0 ? ctx.moveTo(px(p.x), py(p.y)) : ctx.lineTo(px(p.x), py(p.y))));
   ctx.stroke();
 
-  ctx.fillStyle = '#354f44';
+  ctx.fillStyle = '#000000';
   pontos.forEach((p) => { ctx.beginPath(); ctx.arc(px(p.x), py(p.y), 4, 0, Math.PI * 2); ctx.fill(); });
 
-  ctx.fillStyle = '#736d57';
+  ctx.fillStyle = '#757575';
   ctx.font = '11px "Inter Variable", -apple-system, sans-serif';
   ctx.fillText(String(maxY), 4, py(maxY) + 4);
   ctx.fillText(String(minY), 4, py(minY) + 4);
@@ -1448,112 +1491,6 @@ async function viewArchiveList() {
       </div>
     `).join('') || '<div class="empty">Nada arquivado ainda.</div>',
   });
-}
-
-// ---------- sincronização manual entre aparelhos ----------
-
-function viewBackup() {
-  const codigo = Sync.codigoAtual();
-  const blocoSync = codigo
-    ? `
-      <div class="grid2">
-        <input id="codigo-atual" type="text" value="${esc(codigo)}" readonly onclick="this.select()">
-        <button class="btn btn-secondary" style="margin-top:0" onclick="onCopiarCodigo()">Copiar</button>
-      </div>
-      <button class="btn btn-primary" onclick="onSincronizarAgora()">Sincronizar agora</button>
-      <button class="btn btn-ghost" onclick="onTrocarCodigo()">Trocar código / desfazer pareamento</button>
-    `
-    : `
-      <button class="btn btn-primary" onclick="onGerarCodigo()">Gerar código neste aparelho</button>
-      <div class="grid2" style="margin-top:10px">
-        <input id="codigo-colado" type="text" placeholder="Ou cole o código do outro aparelho">
-        <button class="btn btn-secondary" style="margin-top:0" onclick="onColarCodigo()">Usar</button>
-      </div>
-    `;
-
-  shell({
-    title: 'Sincronização', back: '/',
-    body: `
-      <div class="card">
-        <div class="section-title">Sincronização automática (nuvem)</div>
-        <p style="font-size:14px;color:var(--ink-mute)">
-          Gere um código aqui e cole o mesmo código no outro aparelho — só uma vez. Depois, toque
-          em "Sincronizar agora" nos dois sempre que quiser atualizar. O dado passa a ficar
-          guardado também na nuvem, protegido por esse código.
-        </p>
-        ${blocoSync}
-      </div>
-      <div class="card">
-        <div class="section-title">Exportar (manual)</div>
-        <p style="font-size:14px;color:var(--ink-mute)">
-          Gera um arquivo com todos os pacientes, evoluções, exames e demais dados deste aparelho.
-          Envie pro outro (AirDrop, Arquivos, e-mail) e importe lá.
-        </p>
-        <button class="btn btn-secondary" onclick="Backup.baixarArquivo()">Exportar dados deste aparelho</button>
-      </div>
-      <div class="card">
-        <div class="section-title">Importar (manual)</div>
-        <p style="font-size:14px;color:var(--ink-mute)">
-          Escolha o arquivo exportado do outro aparelho. Registros que já existem aqui são
-          atualizados; novos são adicionados. Nada é apagado.
-        </p>
-        <input type="file" accept="application/json" onchange="onImportarBackup(this)">
-      </div>
-    `,
-  });
-}
-
-async function onGerarCodigo() {
-  Sync.gerarNovoCodigo();
-  try { await Sync.enviarNuvem(await Backup.montarDump()); } catch { /* tenta de novo no próximo "Sincronizar agora" */ }
-  viewBackup();
-}
-function onColarCodigo() {
-  const el = document.getElementById('codigo-colado');
-  const valor = el.value.trim();
-  if (!valor) return;
-  Sync.usarCodigo(valor);
-  viewBackup();
-}
-async function onTrocarCodigo() {
-  const ok = await Dialog.confirmar({
-    titulo: 'Trocar código de sincronização?',
-    mensagem: 'Isso desfaz o pareamento com o outro aparelho neste aqui (o outro continua com o código antigo, sem sofrer nada).',
-    textoConfirmar: 'Trocar',
-    perigoso: true,
-  });
-  if (!ok) return;
-  Sync.limparCodigo();
-  viewBackup();
-}
-function onCopiarCodigo() {
-  const el = document.getElementById('codigo-atual');
-  el.select();
-  navigator.clipboard?.writeText(el.value).then(() => Dialog.avisar('Código copiado.', { tipo: 'sucesso' })).catch(() => {});
-}
-async function onSincronizarAgora() {
-  try {
-    const total = await Sync.sincronizarAgora();
-    Dialog.avisar(`Sincronizado — ${total} registro(s) recebido(s) da nuvem.`, { tipo: 'sucesso' });
-  } catch {
-    Dialog.avisar('Não deu pra sincronizar agora. Confira sua internet e tente de novo.', { tipo: 'erro' });
-  }
-  viewBackup();
-}
-
-async function onImportarBackup(fileInput) {
-  const file = fileInput.files[0];
-  if (!file) return;
-  let dump;
-  try {
-    dump = JSON.parse(await file.text());
-  } catch {
-    Dialog.avisar('Arquivo inválido — escolha um .json exportado pelo Wards.', { tipo: 'erro' });
-    return;
-  }
-  const total = await Backup.importarDump(dump);
-  Dialog.avisar(`Importado: ${total} registro(s).`, { tipo: 'sucesso' });
-  nav('/');
 }
 
 boot();

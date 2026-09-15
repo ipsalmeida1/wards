@@ -12,7 +12,7 @@ const Archive = {
 
     const admissoes = await WardsDB.Store.where(
       'admissions',
-      (a) => a.status === 'alta' || a.status === 'obito'
+      (a) => (a.status === 'alta' || a.status === 'obito')
     );
     for (const a of admissoes) {
       a.status = 'arquivado';

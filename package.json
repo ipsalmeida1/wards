@@ -1,7 +1,4 @@
 {
   "name": "wards-pwa",
-  "private": true,
-  "dependencies": {
-    "@vercel/blob": "^2.8.0"
-  }
+  "private": true
 }
