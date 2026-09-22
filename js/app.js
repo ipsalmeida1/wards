@@ -569,6 +569,17 @@ function onDigitarHDA(campo) {
   faixa.innerHTML = linhas.map((l) => `<strong>${esc(l.data)}:</strong> ${renderTexto(l.texto)}`).join('<br>');
 }
 
+// Alterna entre a caixa de edição da HDA e a "Linha do tempo" — uma leitura
+// só da história natural, organizada automaticamente por data a partir do
+// mesmo texto (mesma convenção "dia DD/MM: ..." que já alimenta a faixa-
+// resumo fixa no topo da caixa de edição). Estado de tela, não de dado —
+// mesmo padrão de `vitaisAnalitoAtual`.
+let hdaModoAtual = 'editar'; // 'editar' | 'linha'
+function onAlternarModoHDA(modo, admissionId) {
+  hdaModoAtual = modo;
+  viewPatientDetail(admissionId, 'hda');
+}
+
 async function tabHDA(admission) {
   // Ordem de prioridade, não de criação: problema sem `ordem` (registro
   // antigo, ou recém-adicionado) cai pro fim da lista pela data de criação —
@@ -593,8 +604,25 @@ async function tabHDA(admission) {
     `;
   }).join('');
 
-  return `
-    ${statusCard(admission)}
+  const alternadorModo = `
+    <div class="tabs" style="margin:10px 0">
+      <button class="${hdaModoAtual === 'editar' ? 'active' : ''}" onclick="onAlternarModoHDA('editar','${admission.id}')">Editar</button>
+      <button class="${hdaModoAtual === 'linha' ? 'active' : ''}" onclick="onAlternarModoHDA('linha','${admission.id}')">Linha do tempo</button>
+    </div>
+  `;
+
+  const corpoModo = hdaModoAtual === 'linha' ? `
+    <div class="card">
+      ${resumoPorData.length ? resumoPorData.map((l) => `
+        <div class="list-item">
+          <div class="meta">${esc(l.data)}</div>
+          <div>${renderTexto(l.texto)}</div>
+        </div>
+      `).join('') : `
+        <div class="empty">Nenhuma data reconhecida ainda na HDA.<br>Escreva usando "dia DD/MM: texto" (ex.: "dia 20/08: febre e astenia") — essa linha do tempo se organiza sozinha a partir disso.</div>
+      `}
+    </div>
+  ` : `
     <label>Motivo da admissão</label>
     <input id="edit-motivo" type="text" value="${esc(admission.motivoAdmissao || '')}" oninput="salvarHDADebounced('${admission.id}')">
     <label>HDA</label>
@@ -607,6 +635,12 @@ async function tabHDA(admission) {
       <textarea id="edit-hda" oninput="onDigitarHDA(this); salvarHDADebounced('${admission.id}')" placeholder="Envolva um trecho com ==assim== pra destacar. Escrever cronologicamente? Use &quot;dia 25/08: ...&quot; pra ganhar um resumo por data fixo no topo." style="min-height:260px">${esc(admission.hda || '')}</textarea>
     </div>
     <div id="hda-status" class="sub" style="text-align:right;margin-top:4px">${(admission.motivoAdmissao || admission.hda) ? 'Salvo' : ''}</div>
+  `;
+
+  return `
+    ${statusCard(admission)}
+    ${alternadorModo}
+    ${corpoModo}
 
     <div class="section-title">Anotações à mão</div>
     ${thumbs ? `<div class="wf-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:10px">${thumbs}</div>` : ''}
@@ -904,6 +938,27 @@ const PLANO_CATEGORIAS = [
   { key: 'preceptor', label: 'Planos do preceptor', placeholder: 'Nova conduta do preceptor' },
 ];
 
+// Agrupa uma lista já ordenada (mais recente primeiro) em blocos por dia
+// corrido, sem reordenar nada — só detecta onde o dia muda em
+// `fmtData(item.criadoEm)` e quebra ali. Reutilizável em qualquer lista com
+// `criadoEm`.
+function agruparPorDia(itens, campoData = 'criadoEm') {
+  const grupos = [];
+  let diaAtual = null;
+  for (const item of itens) {
+    const dia = fmtData(item[campoData]);
+    if (dia !== diaAtual) {
+      grupos.push({ dia, itens: [] });
+      diaAtual = dia;
+    }
+    grupos[grupos.length - 1].itens.push(item);
+  }
+  return grupos;
+}
+function htmlCabecalhoDia(dia, primeiro) {
+  return `<div style="font-size:12px;font-weight:700;color:var(--ink-mute);text-transform:uppercase;letter-spacing:.5px;${primeiro ? '' : 'margin-top:12px;padding-top:10px;border-top:1px solid var(--hairline);'}">${esc(dia)}</div>`;
+}
+
 async function tabPlanos(admission) {
   const todos = (await DB.where('planItems', (p) => p.admissionId === admission.id))
     .sort((a, b) => b.criadoEm - a.criadoEm);
@@ -912,13 +967,17 @@ async function tabPlanos(admission) {
     // planos antigos (de antes dessa separação) não têm `categoria` — tratados
     // como "residente", que era o único tipo que existia até então.
     const itens = todos.filter((p) => (p.categoria || 'residente') === key);
+    const grupos = agruparPorDia(itens);
     return `
       <div class="section-title">${label}</div>
       <div class="card">
-        ${itens.map((p) => `
-          <div class="list-item row" onclick="togglePlano('${p.id}')" style="cursor:pointer">
-            <span class="${p.concluido ? 'strike' : ''}">${p.concluido ? '☑' : '☐'} ${renderTexto(p.descricao)}</span>
-          </div>
+        ${grupos.map((g, i) => `
+          ${htmlCabecalhoDia(g.dia, i === 0)}
+          ${g.itens.map((p) => `
+            <div class="list-item row" onclick="togglePlano('${p.id}')" style="cursor:pointer">
+              <span class="${p.concluido ? 'strike' : ''}">${p.concluido ? '☑' : '☐'} ${renderTexto(p.descricao)}</span>
+            </div>
+          `).join('')}
         `).join('') || '<div class="list-item">Nenhum plano registrado.</div>'}
         <div class="grid2" style="margin-top:10px">
           <input id="novo-plano-${key}" type="text" placeholder="${placeholder}">
@@ -1315,13 +1374,83 @@ async function onAddVitalSigns(admissionId) {
 const LAB_FIELDS = ['hb', 'ht', 'vcm', 'chcm', 'plaq', 'leuco', 'pcr', 'ureia', 'creat', 'na', 'k', 'cl'];
 const LAB_LABEL = { hb: 'Hb', ht: 'Ht', vcm: 'VCM', chcm: 'CHCM', plaq: 'Plaq', leuco: 'Leucócitos', pcr: 'PCR', ureia: 'Ureia', creat: 'Creatinina', na: 'Na', k: 'K', cl: 'Cl' };
 
+// Busca inteligente do nome do lab: "Cr" ou "creat" acham Creatinina, "K"
+// acha Potássio etc. Reaproveita o MESMO dicionário de apelidos que já
+// existia pra extrair labs digitados no Bloco de Notas (LAB_TOKEN_MAP), só
+// que aqui aceita também prefixo (não precisa ser o apelido exato) e cai
+// por último pro nome completo do exame.
+function normalizarLabApelido(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+function resolverLabPorApelido(texto) {
+  const alvo = normalizarLabApelido(texto);
+  if (!alvo) return null;
+  for (const [apelido, key] of Object.entries(LAB_TOKEN_MAP)) {
+    if (normalizarLabApelido(apelido) === alvo) return { key, label: LAB_LABEL[key] };
+  }
+  for (const [apelido, key] of Object.entries(LAB_TOKEN_MAP)) {
+    if (normalizarLabApelido(apelido).startsWith(alvo)) return { key, label: LAB_LABEL[key] };
+  }
+  for (const key of LAB_FIELDS) {
+    if (normalizarLabApelido(LAB_LABEL[key]).startsWith(alvo)) return { key, label: LAB_LABEL[key] };
+  }
+  return null;
+}
+
+// Rascunho dos labs da ficha de "Novo exame" — começa em branco (nada de
+// grade fixa com os 12 campos sempre visíveis) e cresce numa coluna
+// vertical conforme cada um é adicionado. Vive só na memória até salvar,
+// igual ao resto desse formulário (é criação de registro, não edição).
+let labsRascunho = [];
+function htmlListaLabsRascunho() {
+  return labsRascunho.map((l, i) => `
+    <div class="list-item row">
+      <span>${esc(l.label)}: ${esc(l.valor)}</span>
+      <button class="btn btn-ghost" style="width:auto;margin-top:0;padding:6px 8px" onclick="onRemoverLabRascunho(${i})" aria-label="Remover" title="Remover">🗑️</button>
+    </div>
+  `).join('') || '<div class="list-item">Nenhum lab adicionado ainda.</div>';
+}
+function onRemoverLabRascunho(indice) {
+  labsRascunho.splice(indice, 1);
+  document.getElementById('labs-rascunho-lista').innerHTML = htmlListaLabsRascunho();
+}
+function onAdicionarLabRascunho() {
+  const nomeEl = document.getElementById('lab-nome');
+  const valorEl = document.getElementById('lab-valor');
+  const nome = nomeEl.value.trim();
+  const valorTexto = valorEl.value.trim();
+  if (!nome || !valorTexto) return;
+  const resolvido = resolverLabPorApelido(nome);
+  if (!resolvido) {
+    Dialog.avisar(`Lab "${nome}" não reconhecido — tente a sigla usual (Cr, K, Hb...) ou o nome completo.`, { tipo: 'erro' });
+    return;
+  }
+  const valor = Number(valorTexto.replace(',', '.'));
+  if (Number.isNaN(valor)) {
+    Dialog.avisar('O valor precisa ser um número.', { tipo: 'erro' });
+    return;
+  }
+  labsRascunho = labsRascunho.filter((l) => l.key !== resolvido.key);
+  labsRascunho.push({ key: resolvido.key, label: resolvido.label, valor });
+  nomeEl.value = '';
+  valorEl.value = '';
+  nomeEl.focus();
+  document.getElementById('labs-rascunho-lista').innerHTML = htmlListaLabsRascunho();
+}
+
 function viewNewExam(admissionId, categoria = 'lab') {
+  labsRascunho = [];
   const camposLab = `
     <div class="section-title">Labs rápidos</div>
-    <div class="grid3">
-      ${LAB_FIELDS.map((k) => `<input id="lab-${k}" type="number" step="any" placeholder="${LAB_LABEL[k]}">`).join('')}
+    <div class="card">
+      <div id="labs-rascunho-lista">${htmlListaLabsRascunho()}</div>
+      <div class="grid2" style="margin-top:10px">
+        <input id="lab-nome" type="text" placeholder="Ex.: Cr, K, Hb..." onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabRascunho()}">
+        <input id="lab-valor" type="text" inputmode="decimal" placeholder="Valor" onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabRascunho()}">
+      </div>
+      <button class="btn btn-secondary" style="margin-top:10px" onclick="onAdicionarLabRascunho()">Adicionar</button>
     </div>
-    <label>Resumo / demais exames</label>
+    <label style="margin-top:14px">Resumo / demais exames</label>
     <textarea id="e-resumo" placeholder="Envolva um trecho com ==assim== pra destacar"></textarea>
   `;
   const camposImagem = `
@@ -1355,10 +1484,7 @@ async function salvarExame(admissionId, categoria) {
   if (categoria === 'imagem') {
     exame.tipo = document.getElementById('e-tipo').value.trim();
   } else {
-    for (const k of LAB_FIELDS) {
-      const v = document.getElementById(`lab-${k}`).value;
-      if (v !== '') exame.labsBasicos[k] = Number(v);
-    }
+    for (const l of labsRascunho) exame.labsBasicos[l.key] = l.valor;
   }
   await DB.put('exams', exame);
   nav(`paciente/${admissionId}/exames`);
