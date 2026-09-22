@@ -289,22 +289,6 @@ mark {
 .dlg-toast-erro { border-left-color: var(--danger); }
 .dlg-toast-sucesso { border-left-color: var(--highlight); }
 
-/* Resumo por data (js/app.js, extrairResumoPorData) — faixa fixa, só
-   leitura, colada no topo da MESMA caixa da HDA: por isso a borda/fundo sai
-   do <textarea> e vai pro wrapper, e o campo em si fica sem chrome próprio
-   pra parecer uma continuação da mesma caixa, não duas caixas separadas. */
-.hda-com-resumo {
-  border: 1px solid var(--hairline); border-radius: var(--r-md); background: var(--surface); overflow: hidden;
-}
-.hda-resumo-fixo {
-  padding: 8px 12px; font-size: 13px; color: var(--ink-mute); line-height: 1.5;
-  background: var(--accent-soft); border-bottom: 1px solid var(--hairline);
-}
-.hda-resumo-fixo strong { color: var(--ink); }
-.hda-com-resumo textarea {
-  border: none; border-radius: 0; background: none; display: block;
-}
-
 /* Superfície de escrita com Pencil que vira texto (js/scribble.js) — papel
    pautado igual ao do canvas de tinta (mesmo --hairline, mesmo espaçamento
    de linha), só que aqui é um <textarea> de verdade por baixo. */

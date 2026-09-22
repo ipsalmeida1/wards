@@ -550,34 +550,31 @@ function extrairResumoPorData(texto) {
   }).filter((l) => l.texto);
 }
 
-// Atualiza a faixa de resumo ao vivo, a cada tecla. Só mexe no DOM (cria/
-// atualiza/remove a faixa) — quem grava de verdade no banco é o
-// salvarHDADebounced, chamado à parte no mesmo oninput.
-function onDigitarHDA(campo) {
-  const wrap = campo.closest('.hda-com-resumo');
-  const linhas = extrairResumoPorData(campo.value);
-  let faixa = wrap.querySelector('.hda-resumo-fixo');
-  if (!linhas.length) {
-    if (faixa) faixa.remove();
-    return;
-  }
-  if (!faixa) {
-    faixa = document.createElement('div');
-    faixa.className = 'hda-resumo-fixo';
-    wrap.insertBefore(faixa, campo);
-  }
-  faixa.innerHTML = linhas.map((l) => `<strong>${esc(l.data)}:</strong> ${renderTexto(l.texto)}`).join('<br>');
+// Linha do tempo: leitura automática da história natural, organizada por
+// data a partir do texto da HDA (convenção "dia DD/MM: ..."). Fica sempre
+// visível, sem clique nenhum — some sozinha quando não há data reconhecida,
+// aparece sozinha assim que a primeira surge.
+function htmlLinhaDoTempoHDA(resumoPorData) {
+  if (!resumoPorData.length) return '';
+  return `
+    <div class="section-title">Linha do tempo</div>
+    <div class="card">
+      ${resumoPorData.map((l) => `
+        <div class="list-item">
+          <div class="meta">${esc(l.data)}</div>
+          <div>${renderTexto(l.texto)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
-// Alterna entre a caixa de edição da HDA e a "Linha do tempo" — uma leitura
-// só da história natural, organizada automaticamente por data a partir do
-// mesmo texto (mesma convenção "dia DD/MM: ..." que já alimenta a faixa-
-// resumo fixa no topo da caixa de edição). Estado de tela, não de dado —
-// mesmo padrão de `vitaisAnalitoAtual`.
-let hdaModoAtual = 'editar'; // 'editar' | 'linha'
-function onAlternarModoHDA(modo, admissionId) {
-  hdaModoAtual = modo;
-  viewPatientDetail(admissionId, 'hda');
+// Atualiza a linha do tempo ao vivo, a cada tecla — sem re-renderizar a tela
+// (perderia o cursor no meio da frase). Quem grava de verdade no banco é o
+// salvarHDADebounced, chamado à parte no mesmo oninput.
+function onDigitarHDA(campo) {
+  const wrap = document.getElementById('hda-linha-tempo-wrap');
+  if (wrap) wrap.innerHTML = htmlLinhaDoTempoHDA(extrairResumoPorData(campo.value));
 }
 
 async function tabHDA(admission) {
@@ -604,47 +601,21 @@ async function tabHDA(admission) {
     `;
   }).join('');
 
-  const alternadorModo = `
-    <div class="tabs" style="margin:10px 0">
-      <button class="${hdaModoAtual === 'editar' ? 'active' : ''}" onclick="onAlternarModoHDA('editar','${admission.id}')">Editar</button>
-      <button class="${hdaModoAtual === 'linha' ? 'active' : ''}" onclick="onAlternarModoHDA('linha','${admission.id}')">Linha do tempo</button>
-    </div>
-  `;
+  return `
+    ${statusCard(admission)}
+    <div id="hda-linha-tempo-wrap">${htmlLinhaDoTempoHDA(resumoPorData)}</div>
 
-  const corpoModo = hdaModoAtual === 'linha' ? `
-    <div class="card">
-      ${resumoPorData.length ? resumoPorData.map((l) => `
-        <div class="list-item">
-          <div class="meta">${esc(l.data)}</div>
-          <div>${renderTexto(l.texto)}</div>
-        </div>
-      `).join('') : `
-        <div class="empty">Nenhuma data reconhecida ainda na HDA.<br>Escreva usando "dia DD/MM: texto" (ex.: "dia 20/08: febre e astenia") — essa linha do tempo se organiza sozinha a partir disso.</div>
-      `}
-    </div>
-  ` : `
     <label>Motivo da admissão</label>
     <input id="edit-motivo" type="text" value="${esc(admission.motivoAdmissao || '')}" oninput="salvarHDADebounced('${admission.id}')">
     <label>HDA</label>
-    <div class="hda-com-resumo">
-      ${resumoPorData.length ? `
-        <div class="hda-resumo-fixo">
-          ${resumoPorData.map((l) => `<strong>${esc(l.data)}:</strong> ${renderTexto(l.texto)}`).join('<br>')}
-        </div>
-      ` : ''}
-      <textarea id="edit-hda" oninput="onDigitarHDA(this); salvarHDADebounced('${admission.id}')" placeholder="Envolva um trecho com ==assim== pra destacar. Escrever cronologicamente? Use &quot;dia 25/08: ...&quot; pra ganhar um resumo por data fixo no topo." style="min-height:260px">${esc(admission.hda || '')}</textarea>
-    </div>
+    <textarea id="edit-hda" oninput="onDigitarHDA(this); salvarHDADebounced('${admission.id}')" placeholder="Envolva um trecho com ==assim== pra destacar. Escrever cronologicamente? Use &quot;dia 25/08: ...&quot; pra ganhar uma linha do tempo automática no topo desta aba." style="min-height:260px">${esc(admission.hda || '')}</textarea>
     <div id="hda-status" class="sub" style="text-align:right;margin-top:4px">${(admission.motivoAdmissao || admission.hda) ? 'Salvo' : ''}</div>
-  `;
 
-  return `
-    ${statusCard(admission)}
-    ${alternadorModo}
-    ${corpoModo}
-
-    <div class="section-title">Anotações à mão</div>
+    <div class="row" style="margin:14px 0 6px">
+      <div class="section-title" style="margin:0">Anotações à mão</div>
+      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoHDA('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">✍️</button>
+    </div>
     ${thumbs ? `<div class="wf-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:10px">${thumbs}</div>` : ''}
-    <button class="btn btn-secondary" onclick="onEscreverAmaoHDA('${admission.id}')">✍️ Escrever com a Pencil</button>
 
     <div class="section-title">Lista de problemas</div>
     <div class="card">
@@ -1028,9 +999,11 @@ async function tabPrescricoes(admission) {
     <div class="wf-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:14px">
       ${thumbs || '<div class="empty">Nenhuma foto de prescrição ainda.</div>'}
     </div>
-    <label>Adicionar foto (câmera ou galeria)</label>
+    <div class="row">
+      <label style="margin:0">Adicionar foto (câmera ou galeria)</label>
+      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoPrescricao('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">✍️</button>
+    </div>
     <input type="file" accept="image/*" multiple onchange="onAddPrescricaoFoto('${admission.id}', this.files)">
-    <button class="btn btn-secondary" onclick="onEscreverAmaoPrescricao('${admission.id}')">✍️ Escrever com a Pencil</button>
 
     <div class="section-title">Observações</div>
     <label>Possíveis usos e datas de uso de ATB</label>
@@ -1112,9 +1085,11 @@ async function tabEvolucoes(admission) {
     <label style="margin-top:14px">Anexar laudo de exame de imagem (câmera ou galeria)</label>
     <input type="file" accept="image/*" multiple onchange="onAnexarLaudoImagem('${admission.id}', this.files)">
 
-    <div class="section-title">Anotações à mão</div>
+    <div class="row" style="margin:14px 0 6px">
+      <div class="section-title" style="margin:0">Anotações à mão</div>
+      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoEvolucao('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">✍️</button>
+    </div>
     ${thumbs ? `<div class="wf-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:10px">${thumbs}</div>` : ''}
-    <button class="btn btn-secondary" onclick="onEscreverAmaoEvolucao('${admission.id}')">✍️ Escrever com a Pencil</button>
   `;
 }
 
