@@ -1204,9 +1204,11 @@ const VITAL_LABEL = { paSistolica: 'PA máx', paDiastolica: 'PA mín', fc: 'FC',
 let vitaisChartPontos = null;
 let vitaisAnalitoAtual = 'fc';
 
-// Separa um texto livre tipo "120x80" / "120/80" em dois números — usado só
-// pra aproveitar registros antigos (de antes de PA virar dois campos
-// próprios). Quando não dá pra separar, sobra null nos dois.
+// Separa um texto livre tipo "120x80" / "120/80" em dois números — é o que
+// interpreta o campo único de PA na aba Sinais Vitais (v-pa), e também
+// resgata registros bem antigos que só tinham esse texto livre guardado
+// (de antes de PA virar dois campos próprios). Quando não dá pra separar,
+// sobra null nos dois.
 function parsePA(texto) {
   if (!texto) return { sistolica: null, diastolica: null };
   const m = String(texto).match(/(\d+)\s*[x×/]\s*(\d+)/i);
@@ -1262,10 +1264,7 @@ async function tabVitais(admission) {
   }).join('') || '<div class="list-item">Nenhum registro ainda.</div>';
 
   return `
-    <div class="grid2">
-      <input id="v-pa-sist" type="number" placeholder="PA máxima">
-      <input id="v-pa-diast" type="number" placeholder="PA mínima">
-    </div>
+    <input id="v-pa" type="text" inputmode="numeric" placeholder="PA (ex.: 120x70)">
     <div class="grid2" style="margin-top:8px">
       <input id="v-fc" type="number" placeholder="FC">
       <input id="v-sato2" type="number" placeholder="SatO2">
@@ -1290,16 +1289,20 @@ function onTrocarAnalitoVitais(admissionId, analito) {
 }
 
 async function onAddVitalSigns(admissionId) {
-  const paSist = document.getElementById('v-pa-sist').value;
-  const paDiast = document.getElementById('v-pa-diast').value;
+  const paTexto = document.getElementById('v-pa').value.trim();
+  const { sistolica: paSist, diastolica: paDiast } = parsePA(paTexto);
+  if (paTexto && paSist == null) {
+    Dialog.avisar('PA não reconhecida — use o formato 120x70.', { tipo: 'erro' });
+    return;
+  }
   const fc = document.getElementById('v-fc').value;
   const sato2 = document.getElementById('v-sato2').value;
   const tax = document.getElementById('v-tax').value.trim();
-  if (paSist === '' && paDiast === '' && fc === '' && sato2 === '' && !tax) return;
+  if (paSist == null && fc === '' && sato2 === '' && !tax) return;
   await DB.put('vitalSigns', {
     id: newId(), admissionId, createdAt: Date.now(),
-    paSistolica: paSist !== '' ? Number(paSist) : null,
-    paDiastolica: paDiast !== '' ? Number(paDiast) : null,
+    paSistolica: paSist,
+    paDiastolica: paDiast,
     fc: fc !== '' ? Number(fc) : null,
     sato2: sato2 !== '' ? Number(sato2) : null,
     tax: tax || null,
