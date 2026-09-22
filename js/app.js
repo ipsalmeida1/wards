@@ -248,7 +248,10 @@ async function viewPatientList(busca = '') {
         <div class="swipe-action" onclick="onExcluirAdmissao('${a.id}')">🗑️<br>Excluir</div>
         <div class="card tappable swipe-content" onclick="onCliqueCardPaciente(this, '${a.id}')">
           <div class="row">
-            <span class="leito">${esc(a.leito)}</span>
+            <div class="row" style="gap:8px;flex:none">
+              <button class="icon-btn" style="width:auto;font-size:19px;padding:4px" onclick="event.stopPropagation(); onTogglePrescricaoCheck('${a.id}')" title="Prescrição feita hoje" aria-label="Prescrição feita hoje">${a.prescricaoCheckDia === hojeLocalISO() ? '☑' : '☐'}</button>
+              <span class="leito">${esc(a.leito)}</span>
+            </div>
             <button class="icon-btn" style="width:auto;font-size:19px" onclick="event.stopPropagation(); onDarAltaDireto('${a.id}')" title="Dar alta" aria-label="Dar alta">🏠</button>
           </div>
           <div class="sub">${esc(p.nomeCompleto || p.iniciais || 'sem paciente')} — admitido em ${fmtData(a.dataAdmissao)}</div>
@@ -529,6 +532,19 @@ async function onDarAltaDireto(admissionId) {
   viewPatientList();
 }
 
+// Checklist do dia, direto na lista: um quadradinho por paciente pra marcar
+// "prescrição feita hoje" sem precisar entrar na ficha. Guarda só a DATA
+// (não um booleano solto), então o check se desmarca sozinho no dia
+// seguinte — precisa ser refeito a cada rodada, que é como prescrição
+// funciona na prática (reescrita todo dia, não uma tarefa de uma vez só).
+async function onTogglePrescricaoCheck(admissionId) {
+  const a = await getAdmission(admissionId);
+  const hoje = hojeLocalISO();
+  a.prescricaoCheckDia = a.prescricaoCheckDia === hoje ? null : hoje;
+  await DB.put('admissions', a);
+  viewPatientList();
+}
+
 // Resumo por data da HDA — mecânico, sem IA: acha marcas "dia DD/MM" no
 // texto (convenção de quem escreve a HDA cronologicamente, ex.: "dia
 // 25/08: dor no corpo e febre, dia 27/08 rash cutâneo") e usa o trecho
@@ -553,20 +569,12 @@ function extrairResumoPorData(texto) {
 // Linha do tempo: leitura automática da história natural, organizada por
 // data a partir do texto da HDA (convenção "dia DD/MM: ..."). Fica sempre
 // visível, sem clique nenhum — some sozinha quando não há data reconhecida,
-// aparece sozinha assim que a primeira surge.
+// aparece sozinha assim que a primeira surge. De propósito sem card nem
+// título próprio ("Linha do tempo"): são só linhas discretas coladas na
+// label "HDA", não uma seção separada que precisa de nome.
 function htmlLinhaDoTempoHDA(resumoPorData) {
   if (!resumoPorData.length) return '';
-  return `
-    <div class="section-title">Linha do tempo</div>
-    <div class="card">
-      ${resumoPorData.map((l) => `
-        <div class="list-item">
-          <div class="meta">${esc(l.data)}</div>
-          <div>${renderTexto(l.texto)}</div>
-        </div>
-      `).join('')}
-    </div>
-  `;
+  return resumoPorData.map((l) => `<div class="sub">${esc(l.data)}: ${renderTexto(l.texto)}</div>`).join('');
 }
 
 // Atualiza a linha do tempo ao vivo, a cada tecla — sem re-renderizar a tela
@@ -603,17 +611,16 @@ async function tabHDA(admission) {
 
   return `
     ${statusCard(admission)}
-    <div id="hda-linha-tempo-wrap">${htmlLinhaDoTempoHDA(resumoPorData)}</div>
-
     <label>Motivo da admissão</label>
     <input id="edit-motivo" type="text" value="${esc(admission.motivoAdmissao || '')}" oninput="salvarHDADebounced('${admission.id}')">
     <label>HDA</label>
-    <textarea id="edit-hda" oninput="onDigitarHDA(this); salvarHDADebounced('${admission.id}')" placeholder="Envolva um trecho com ==assim== pra destacar. Escrever cronologicamente? Use &quot;dia 25/08: ...&quot; pra ganhar uma linha do tempo automática no topo desta aba." style="min-height:260px">${esc(admission.hda || '')}</textarea>
+    <div id="hda-linha-tempo-wrap">${htmlLinhaDoTempoHDA(resumoPorData)}</div>
+    <textarea id="edit-hda" oninput="onDigitarHDA(this); salvarHDADebounced('${admission.id}')" placeholder="Envolva um trecho com ==assim== pra destacar. Escrever cronologicamente? Use &quot;dia 25/08: ...&quot; pra ganhar uma linha do tempo automática aqui em cima." style="min-height:260px">${esc(admission.hda || '')}</textarea>
     <div id="hda-status" class="sub" style="text-align:right;margin-top:4px">${(admission.motivoAdmissao || admission.hda) ? 'Salvo' : ''}</div>
 
     <div class="row" style="margin:14px 0 6px">
       <div class="section-title" style="margin:0">Anotações à mão</div>
-      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoHDA('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">✍️</button>
+      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoHDA('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">✏️</button>
     </div>
     ${thumbs ? `<div class="wf-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:10px">${thumbs}</div>` : ''}
 
@@ -1001,7 +1008,7 @@ async function tabPrescricoes(admission) {
     </div>
     <div class="row">
       <label style="margin:0">Adicionar foto (câmera ou galeria)</label>
-      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoPrescricao('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">✍️</button>
+      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoPrescricao('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">✏️</button>
     </div>
     <input type="file" accept="image/*" multiple onchange="onAddPrescricaoFoto('${admission.id}', this.files)">
 
@@ -1087,7 +1094,7 @@ async function tabEvolucoes(admission) {
 
     <div class="row" style="margin:14px 0 6px">
       <div class="section-title" style="margin:0">Anotações à mão</div>
-      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoEvolucao('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">✍️</button>
+      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoEvolucao('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">✏️</button>
     </div>
     ${thumbs ? `<div class="wf-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:10px">${thumbs}</div>` : ''}
   `;
