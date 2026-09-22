@@ -551,18 +551,28 @@ async function onTogglePrescricaoCheck(admissionId) {
 // entre uma marca e a próxima como aquele dia. Corta na primeira frase
 // (até ./!/quebra de linha) só por estrutura — não julga o que é
 // "importante", só evita uma linha do resumo virar o parágrafo inteiro.
+// `inicioTexto`/`fimTexto` marcam onde a frase reconhecida (l.texto, ANTES
+// do replace de vírgula/ponto-e-vírgula final) começa e termina dentro do
+// texto ORIGINAL — é o que permite editar uma entrada da linha do tempo e
+// regravar só aquele pedacinho na HDA de verdade, sem arriscar apagar o que
+// vem depois (texto extra até a próxima marca "dia", que não aparece no
+// resumo mas continua existindo na HDA).
 function extrairResumoPorData(texto) {
   const reData = /dia\s+(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s*:?\s*/gi;
   const marcas = [...(texto || '').matchAll(reData)];
   if (!marcas.length) return [];
   return marcas.map((m, i) => {
-    const inicio = m.index + m[0].length;
-    const fim = i + 1 < marcas.length ? marcas[i + 1].index : texto.length;
-    let trecho = texto.slice(inicio, fim).trim();
-    const primeiraFrase = trecho.match(/^[^.!?\n]+[.!?]?/);
-    if (primeiraFrase) trecho = primeiraFrase[0].trim();
-    trecho = trecho.replace(/[,;]+$/, '').trim();
-    return { data: m[1], texto: trecho };
+    const inicioBloco = m.index + m[0].length;
+    const fimBloco = i + 1 < marcas.length ? marcas[i + 1].index : texto.length;
+    const bloco = texto.slice(inicioBloco, fimBloco);
+    const espacoInicial = bloco.match(/^\s*/)[0].length;
+    const semEspaco = bloco.slice(espacoInicial);
+    const primeiraFrase = semEspaco.match(/^[^.!?\n]+[.!?]?/);
+    const trechoBruto = primeiraFrase ? primeiraFrase[0] : semEspaco;
+    const inicioTexto = inicioBloco + espacoInicial;
+    const fimTexto = inicioTexto + trechoBruto.length;
+    const texto2 = trechoBruto.trim().replace(/[,;]+$/, '').trim();
+    return { data: m[1], texto: texto2, inicioTexto, fimTexto };
   }).filter((l) => l.texto);
 }
 
@@ -572,17 +582,44 @@ function extrairResumoPorData(texto) {
 // aparece sozinha assim que a primeira surge. De propósito sem card nem
 // título próprio ("Linha do tempo"): são só linhas discretas coladas na
 // label "HDA", não uma seção separada que precisa de nome.
-function htmlLinhaDoTempoHDA(resumoPorData) {
+//
+// Cada linha é editável (o texto, não a data): um <input> que parece texto
+// solto até ganhar foco. Ao perder o foco, regrava só aquele trecho de volta
+// na HDA de verdade (ver onEditarLinhaDoTempo) e recalcula tudo a partir do
+// texto novo — por isso só confirma no blur/Enter, nunca a cada tecla (senão
+// o próprio re-render destruiria o cursor no meio da edição).
+function htmlLinhaDoTempoHDA(resumoPorData, admissionId) {
   if (!resumoPorData.length) return '';
-  return resumoPorData.map((l) => `<div class="sub">${esc(l.data)}: ${renderTexto(l.texto)}</div>`).join('');
+  return resumoPorData.map((l) => `
+    <div class="sub linha-tempo-linha">
+      <strong>${esc(l.data)}:</strong>
+      <input type="text" class="linha-tempo-input" value="${esc(l.texto)}"
+        onblur="onEditarLinhaDoTempo(this,'${admissionId}',${l.inicioTexto},${l.fimTexto})"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
+    </div>
+  `).join('');
+}
+
+// Regrava só o trecho editado de volta na HDA (usando os offsets do texto
+// ORIGINAL que estava na tela quando a linha do tempo foi desenhada) e
+// recalcula a linha do tempo inteira a partir do resultado — os offsets das
+// outras linhas mudam se o tamanho do texto mudou, então nunca dá pra só
+// atualizar essa uma entrada isolada.
+async function onEditarLinhaDoTempo(inputEl, admissionId, inicioTexto, fimTexto) {
+  const campo = document.getElementById('edit-hda');
+  const hdaAtual = campo.value;
+  const novoHda = hdaAtual.slice(0, inicioTexto) + inputEl.value.trim() + hdaAtual.slice(fimTexto);
+  campo.value = novoHda;
+  onDigitarHDA(campo, admissionId);
+  salvarHDADebounced(admissionId);
 }
 
 // Atualiza a linha do tempo ao vivo, a cada tecla — sem re-renderizar a tela
 // (perderia o cursor no meio da frase). Quem grava de verdade no banco é o
 // salvarHDADebounced, chamado à parte no mesmo oninput.
-function onDigitarHDA(campo) {
+function onDigitarHDA(campo, admissionId) {
   const wrap = document.getElementById('hda-linha-tempo-wrap');
-  if (wrap) wrap.innerHTML = htmlLinhaDoTempoHDA(extrairResumoPorData(campo.value));
+  if (wrap) wrap.innerHTML = htmlLinhaDoTempoHDA(extrairResumoPorData(campo.value), admissionId);
 }
 
 async function tabHDA(admission) {
@@ -614,8 +651,8 @@ async function tabHDA(admission) {
     <label>Motivo da admissão</label>
     <input id="edit-motivo" type="text" value="${esc(admission.motivoAdmissao || '')}" oninput="salvarHDADebounced('${admission.id}')">
     <label>HDA</label>
-    <div id="hda-linha-tempo-wrap">${htmlLinhaDoTempoHDA(resumoPorData)}</div>
-    <textarea id="edit-hda" oninput="onDigitarHDA(this); salvarHDADebounced('${admission.id}')" placeholder="Envolva um trecho com ==assim== pra destacar. Escrever cronologicamente? Use &quot;dia 25/08: ...&quot; pra ganhar uma linha do tempo automática aqui em cima." style="min-height:260px">${esc(admission.hda || '')}</textarea>
+    <div id="hda-linha-tempo-wrap">${htmlLinhaDoTempoHDA(resumoPorData, admission.id)}</div>
+    <textarea id="edit-hda" oninput="onDigitarHDA(this,'${admission.id}'); salvarHDADebounced('${admission.id}')" placeholder="Envolva um trecho com ==assim== pra destacar. Escrever cronologicamente? Use &quot;dia 25/08: ...&quot; pra ganhar uma linha do tempo automática aqui em cima." style="min-height:260px">${esc(admission.hda || '')}</textarea>
     <div id="hda-status" class="sub" style="text-align:right;margin-top:4px">${(admission.motivoAdmissao || admission.hda) ? 'Salvo' : ''}</div>
 
     <div class="row" style="margin:14px 0 6px">
@@ -693,7 +730,7 @@ function onEscreverAmaoHDA(admissionId) {
   Scribble.abrir({
     titulo: 'HDA',
     valorInicial: campo.value,
-    onSalvar: (texto) => { campo.value = texto; onDigitarHDA(campo); salvarHDADebounced(admissionId); },
+    onSalvar: (texto) => { campo.value = texto; onDigitarHDA(campo, admissionId); salvarHDADebounced(admissionId); },
   });
 }
 
@@ -1305,7 +1342,7 @@ async function tabVitais(admission) {
   }).join('') || '<div class="list-item">Nenhum registro ainda.</div>';
 
   return `
-    <input id="v-pa" type="text" inputmode="numeric" placeholder="PA (ex.: 120x70)">
+    <input id="v-pa" type="text" placeholder="PA (ex.: 120x70)">
     <div class="grid2" style="margin-top:8px">
       <input id="v-fc" type="number" placeholder="FC">
       <input id="v-sato2" type="number" placeholder="SatO2">

@@ -101,9 +101,9 @@ main { flex: 1; padding: 12px 16px 100px; overflow-y: auto; }
 }
 .tappable { cursor: pointer; transition: transform 120ms var(--ease-out); }
 .tappable:active { transform: scale(0.98); }
-.card .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .card .leito { font-weight: 550; font-size: 16px; }
-.card .sub { color: var(--ink-mute); font-size: 13.5px; margin-top: 2px; }
+.sub { color: var(--ink-mute); font-size: 13.5px; margin-top: 2px; }
 .pill {
   font-size: 11px; padding: 3px 9px; border-radius: var(--r-full); font-weight: 500;
   background: var(--warn-soft); color: var(--warn); white-space: nowrap;
@@ -148,6 +148,19 @@ textarea { resize: vertical; min-height: 110px; }
    texto (autoResizeTextarea) em vez de rolar por dentro, então não faz
    sentido também deixar arrastar a altura na mão. */
 #edit-evolucao { resize: none; overflow-y: hidden; }
+
+/* Linha do tempo da HDA (js/app.js, htmlLinhaDoTempoHDA): cada entrada é um
+   <input type=text>, que bateria com a regra genérica de input acima (borda/
+   fundo/padding de caixa) se ficasse antes dela — por isso vem depois, pra
+   parecer texto solto até ganhar foco. */
+.linha-tempo-linha { display: flex; gap: 6px; align-items: baseline; }
+.linha-tempo-linha strong { flex: none; color: var(--ink-mute); }
+input.linha-tempo-input {
+  flex: 1; width: auto; border: none; border-bottom: 1px dashed transparent; background: none;
+  padding: 0; border-radius: 0; font: inherit; font-size: 13.5px; color: var(--ink-mute); min-width: 0;
+}
+input.linha-tempo-input:hover { border-bottom-color: var(--hairline); }
+input.linha-tempo-input:focus { border-bottom: 1px solid var(--ink); color: var(--ink); outline: none; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 
