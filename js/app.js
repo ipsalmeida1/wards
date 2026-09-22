@@ -14,6 +14,33 @@ function dataLocalDeInput(valorYYYYMMDD) {
   return new Date(ano, mes - 1, dia).getTime();
 }
 
+// Ícones Lucide (lucide.dev, ISC license) embutidos como SVG inline — sem
+// biblioteca/CDN em runtime, sem passo de build: só o <path> de cada ícone
+// que o app realmente usa, colado direto no template. `currentColor` puxa a
+// cor do texto ao redor (funciona sozinho em botão normal, ativo, no FAB
+// preto etc.); o tamanho pedido já escala a --stroke-width junto, então um
+// ícone de 18px sai com ~1,5px de traço — o esperado ao lado de texto
+// regular (ver better-ui: traço bate com o peso do texto vizinho).
+const LUCIDE_PATHS = {
+  pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+  trash: '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  'square-check': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="m16 9-5.5 5.5L8 12"/>',
+  square: '<rect width="18" height="18" x="3" y="3" rx="2"/>',
+  house: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+  'chart-column': '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+  'log-out': '<path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>',
+  printer: '<path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/>',
+  'chevron-up': '<path d="m18 15-6-6-6 6"/>',
+  'chevron-down': '<path d="m6 9 6 6 6-6"/>',
+  'chevron-left': '<path d="m15 18-6-6 6-6"/>',
+  'chevron-right': '<path d="m9 18 6-6-6-6"/>',
+  paperclip: '<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>',
+};
+function icone(nome, tamanho = 18) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${tamanho}" height="${tamanho}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;flex:none">${LUCIDE_PATHS[nome]}</svg>`;
+}
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -217,7 +244,7 @@ async function addPlano(admissionId, descricao, categoria = 'residente') {
 function shell({ title, back, right, body, fabHtml }) {
   render(`
     <header class="topbar">
-      ${back ? `<button class="back" onclick="nav('${back}')">‹ Voltar</button>` : '<span></span>'}
+      ${back ? `<button class="back" onclick="nav('${back}')">${icone('chevron-left', 15)} Voltar</button>` : '<span></span>'}
       <h1>${esc(title)}</h1>
       <span>${right || ''}</span>
     </header>
@@ -245,14 +272,14 @@ async function viewPatientList(busca = '') {
     const p = patients[a.patientId] || {};
     return `
       <div class="swipe-item">
-        <div class="swipe-action" onclick="onExcluirAdmissao('${a.id}')">🗑️<br>Excluir</div>
+        <div class="swipe-action" onclick="onExcluirAdmissao('${a.id}')">${icone('trash', 20)}<br>Excluir</div>
         <div class="card tappable swipe-content" onclick="onCliqueCardPaciente(this, '${a.id}')">
           <div class="row">
             <div class="row" style="gap:8px;flex:none">
-              <button class="icon-btn" style="width:auto;font-size:19px;padding:4px" onclick="event.stopPropagation(); onTogglePrescricaoCheck('${a.id}')" title="Prescrição feita hoje" aria-label="Prescrição feita hoje">${a.prescricaoCheckDia === hojeLocalISO() ? '☑' : '☐'}</button>
+              <button class="icon-btn" style="width:auto;font-size:19px;padding:4px" onclick="event.stopPropagation(); onTogglePrescricaoCheck('${a.id}')" title="Prescrição feita hoje" aria-label="Prescrição feita hoje">${a.prescricaoCheckDia === hojeLocalISO() ? icone('square-check') : icone('square')}</button>
               <span class="leito">${esc(a.leito)}</span>
             </div>
-            <button class="icon-btn" style="width:auto;font-size:19px" onclick="event.stopPropagation(); onDarAltaDireto('${a.id}')" title="Dar alta" aria-label="Dar alta">🏠</button>
+            <button class="icon-btn" style="width:auto;font-size:19px" onclick="event.stopPropagation(); onDarAltaDireto('${a.id}')" title="Dar alta" aria-label="Dar alta">${icone('house')}</button>
           </div>
           <div class="sub">${esc(p.nomeCompleto || p.iniciais || 'sem paciente')} — admitido em ${fmtData(a.dataAdmissao)}</div>
           ${a.motivoAdmissao ? `<div class="sub">${esc(a.motivoAdmissao)}</div>` : ''}
@@ -262,7 +289,7 @@ async function viewPatientList(busca = '') {
 
   shell({
     title: 'Pacientes do dia',
-    right: `<button class="icon-btn" onclick="nav('arquivo')">🗄️</button><button class="icon-btn" onclick="nav('relatorio')">📊</button><button class="icon-btn" onclick="onSair()" title="Sair" aria-label="Sair">⏻</button>`,
+    right: `<button class="icon-btn" onclick="nav('arquivo')" title="Arquivo" aria-label="Arquivo">${icone('archive')}</button><button class="icon-btn" onclick="nav('relatorio')" title="Relatório" aria-label="Relatório">${icone('chart-column')}</button><button class="icon-btn" onclick="onSair()" title="Sair" aria-label="Sair">${icone('log-out')}</button>`,
     body: `
       <input class="searchbar" placeholder="Leito, iniciais ou motivo" value="${esc(busca)}"
         oninput="viewPatientList(this.value)">
@@ -472,7 +499,7 @@ async function viewPatientDetail(admissionId, tab) {
   shell({
     title: `${admission.leito} — ${patient?.nomeCompleto || patient?.iniciais || ''}`,
     back: '/',
-    right: `<button class="icon-btn no-print" onclick="window.print()">🖨️</button>`,
+    right: `<button class="icon-btn no-print" onclick="window.print()" title="Imprimir" aria-label="Imprimir">${icone('printer')}</button>`,
     body: `<div class="tabs">${tabsHtml}</div>${body}`,
     fabHtml: tab === 'exames'
       ? `<button class="btn btn-primary" style="width:100%" onclick="nav('exame/${admissionId}')">+ Exame</button>`
@@ -485,7 +512,7 @@ async function viewPatientDetail(admissionId, tab) {
 
 const STATUS_LABEL = { ativo: 'Ativo', alta: 'Alta', obito: 'Óbito', arquivado: 'Arquivado' };
 
-// "Dar alta" agora se faz direto na lista de pacientes (ícone 🏠 no card) —
+// "Dar alta" agora se faz direto na lista de pacientes (ícone de casa no card) —
 // aqui só sobra o status em si e, se já não estiver ativo, o "Reabrir" pra
 // desfazer (essa ação continua só alcançável por aqui mesmo).
 function statusCard(admission) {
@@ -639,8 +666,8 @@ async function tabHDA(admission) {
           <img src="${a.url}" alt="Anotação da HDA" style="width:100%;border-radius:8px;display:block">
         </a>
         <div class="row" style="margin-top:6px">
-          ${a.tracos ? `<button class="btn btn-ghost" style="width:auto" onclick="onEditarAnotacao('${a.id}', function(){ viewPatientDetail('${admission.id}','hda'); })">✏️ Editar</button>` : '<span></span>'}
-          <button class="btn btn-ghost" style="width:auto" onclick="onDeleteAnexoHDA('${a.id}','${admission.id}')" aria-label="Remover" title="Remover">🗑️</button>
+          ${a.tracos ? `<button class="btn btn-ghost" style="width:auto" onclick="onEditarAnotacao('${a.id}', function(){ viewPatientDetail('${admission.id}','hda'); })">${icone('pencil')} Editar</button>` : '<span></span>'}
+          <button class="btn btn-ghost" style="width:auto" onclick="onDeleteAnexoHDA('${a.id}','${admission.id}')" aria-label="Remover" title="Remover">${icone('trash')}</button>
         </div>
       </div>
     `;
@@ -657,7 +684,7 @@ async function tabHDA(admission) {
 
     <div class="row" style="margin:14px 0 6px">
       <div class="section-title" style="margin:0">Anotações à mão</div>
-      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoHDA('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">✏️</button>
+      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoHDA('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">${icone('pencil')}</button>
     </div>
     ${thumbs ? `<div class="wf-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:10px">${thumbs}</div>` : ''}
 
@@ -667,9 +694,9 @@ async function tabHDA(admission) {
         <div class="list-item row">
           <span>${esc(p.textoDigitado)}</span>
           <div class="row" style="gap:0;flex:none">
-            <button class="btn btn-ghost" style="width:auto;margin-top:0;padding:6px 8px" ${i === 0 ? 'disabled' : ''} onclick="onMoverProblema('${p.id}','${admission.id}',-1)" aria-label="Mais prioritário" title="Mais prioritário">▲</button>
-            <button class="btn btn-ghost" style="width:auto;margin-top:0;padding:6px 8px" ${i === problemas.length - 1 ? 'disabled' : ''} onclick="onMoverProblema('${p.id}','${admission.id}',1)" aria-label="Menos prioritário" title="Menos prioritário">▼</button>
-            <button class="btn btn-ghost" style="width:auto;margin-top:0;padding:6px 8px" onclick="onRemoverProblema('${p.id}','${admission.id}')" aria-label="Remover problema" title="Remover">🗑️</button>
+            <button class="btn btn-ghost" style="width:auto;margin-top:0;padding:6px 8px" ${i === 0 ? 'disabled' : ''} onclick="onMoverProblema('${p.id}','${admission.id}',-1)" aria-label="Mais prioritário" title="Mais prioritário">${icone('chevron-up', 14)}</button>
+            <button class="btn btn-ghost" style="width:auto;margin-top:0;padding:6px 8px" ${i === problemas.length - 1 ? 'disabled' : ''} onclick="onMoverProblema('${p.id}','${admission.id}',1)" aria-label="Menos prioritário" title="Menos prioritário">${icone('chevron-down', 14)}</button>
+            <button class="btn btn-ghost" style="width:auto;margin-top:0;padding:6px 8px" onclick="onRemoverProblema('${p.id}','${admission.id}')" aria-label="Remover problema" title="Remover">${icone('trash')}</button>
           </div>
         </div>
       `).join('') || '<div class="list-item">Nenhum problema ainda.</div>'}
@@ -826,7 +853,7 @@ async function tabExames(admission) {
       <div class="card tappable" onclick="nav('exame-ver/${e.id}')">
         <div class="row">
           <strong>${e.categoria === 'imagem' && e.tipo ? esc(e.tipo) : fmtData(e.data)}</strong>
-          ${contagemAnexos[e.id] ? `<span class="pill" style="background:var(--accent-soft);color:var(--accent)">📎 ${contagemAnexos[e.id]}</span>` : ''}
+          ${contagemAnexos[e.id] ? `<span class="pill" style="background:var(--accent-soft);color:var(--accent)">${icone('paperclip', 12)} ${contagemAnexos[e.id]}</span>` : ''}
         </div>
         ${e.categoria === 'imagem' ? `<div class="sub">${fmtData(e.data)}</div>` : ''}
         <div class="sub">${renderTexto(e.resultadoResumo) || 'Sem resumo'}</div>
@@ -860,8 +887,8 @@ async function viewExamDetail(examId) {
           <img src="${a.url}" alt="Anexo do exame" style="width:100%;border-radius:8px;display:block">
         </a>
         <div class="row" style="margin-top:6px">
-          ${a.tracos ? `<button class="btn btn-ghost" style="width:auto" onclick="onEditarAnotacao('${a.id}', function(){ viewExamDetail('${examId}'); })">✏️ Editar</button>` : '<span></span>'}
-          <button class="btn btn-ghost" style="width:auto" onclick="onDeleteAttachment('${a.id}','${examId}')" aria-label="Remover foto" title="Remover">🗑️</button>
+          ${a.tracos ? `<button class="btn btn-ghost" style="width:auto" onclick="onEditarAnotacao('${a.id}', function(){ viewExamDetail('${examId}'); })">${icone('pencil')} Editar</button>` : '<span></span>'}
+          <button class="btn btn-ghost" style="width:auto" onclick="onDeleteAttachment('${a.id}','${examId}')" aria-label="Remover foto" title="Remover">${icone('trash')}</button>
         </div>
       </div>
     `;
@@ -888,7 +915,7 @@ async function viewExamDetail(examId) {
       </div>
       <label style="margin-top:14px">Anexar foto (câmera ou galeria)</label>
       <input type="file" accept="image/*" multiple onchange="onAddAttachment('${examId}', this.files)">
-      <button class="btn btn-secondary" onclick="onEscreverAmaoExame('${examId}')">✏️ Escrever à mão</button>
+      <button class="btn btn-secondary" onclick="onEscreverAmaoExame('${examId}')">${icone('pencil')} Escrever à mão</button>
     `,
   });
 }
@@ -990,7 +1017,7 @@ async function tabPlanos(admission) {
           ${htmlCabecalhoDia(g.dia, i === 0)}
           ${g.itens.map((p) => `
             <div class="list-item row" onclick="togglePlano('${p.id}')" style="cursor:pointer">
-              <span class="${p.concluido ? 'strike' : ''}">${p.concluido ? '☑' : '☐'} ${renderTexto(p.descricao)}</span>
+              <span class="${p.concluido ? 'strike' : ''}">${p.concluido ? icone('square-check') : icone('square')} ${renderTexto(p.descricao)}</span>
             </div>
           `).join('')}
         `).join('') || '<div class="list-item">Nenhum plano registrado.</div>'}
@@ -1032,8 +1059,8 @@ async function tabPrescricoes(admission) {
           <img src="${a.url}" alt="Foto de prescrição" style="width:100%;border-radius:8px;display:block">
         </a>
         <div class="row" style="margin-top:6px">
-          ${a.tracos ? `<button class="btn btn-ghost" style="width:auto" onclick="onEditarAnotacao('${a.id}', function(){ viewPatientDetail('${admission.id}','prescricoes'); })">✏️ Editar</button>` : '<span></span>'}
-          <button class="btn btn-ghost" style="width:auto" onclick="onDeleteAnexoPrescricao('${a.id}','${admission.id}')" aria-label="Remover foto" title="Remover">🗑️</button>
+          ${a.tracos ? `<button class="btn btn-ghost" style="width:auto" onclick="onEditarAnotacao('${a.id}', function(){ viewPatientDetail('${admission.id}','prescricoes'); })">${icone('pencil')} Editar</button>` : '<span></span>'}
+          <button class="btn btn-ghost" style="width:auto" onclick="onDeleteAnexoPrescricao('${a.id}','${admission.id}')" aria-label="Remover foto" title="Remover">${icone('trash')}</button>
         </div>
       </div>
     `;
@@ -1045,7 +1072,7 @@ async function tabPrescricoes(admission) {
     </div>
     <div class="row">
       <label style="margin:0">Adicionar foto (câmera ou galeria)</label>
-      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoPrescricao('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">✏️</button>
+      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoPrescricao('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">${icone('pencil')}</button>
     </div>
     <input type="file" accept="image/*" multiple onchange="onAddPrescricaoFoto('${admission.id}', this.files)">
 
@@ -1115,8 +1142,8 @@ async function tabEvolucoes(admission) {
           <img src="${a.url}" alt="Anotação do bloco de notas" style="width:100%;border-radius:8px;display:block">
         </a>
         <div class="row" style="margin-top:6px">
-          ${a.tracos ? `<button class="btn btn-ghost" style="width:auto" onclick="onEditarAnotacao('${a.id}', function(){ viewPatientDetail('${admission.id}','evolucoes'); })">✏️ Editar</button>` : '<span></span>'}
-          <button class="btn btn-ghost" style="width:auto" onclick="onDeleteAnexoEvolucao('${a.id}','${admission.id}')" aria-label="Remover" title="Remover">🗑️</button>
+          ${a.tracos ? `<button class="btn btn-ghost" style="width:auto" onclick="onEditarAnotacao('${a.id}', function(){ viewPatientDetail('${admission.id}','evolucoes'); })">${icone('pencil')} Editar</button>` : '<span></span>'}
+          <button class="btn btn-ghost" style="width:auto" onclick="onDeleteAnexoEvolucao('${a.id}','${admission.id}')" aria-label="Remover" title="Remover">${icone('trash')}</button>
         </div>
       </div>
     `;
@@ -1131,7 +1158,7 @@ async function tabEvolucoes(admission) {
 
     <div class="row" style="margin:14px 0 6px">
       <div class="section-title" style="margin:0">Anotações à mão</div>
-      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoEvolucao('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">✏️</button>
+      <button class="icon-btn" style="width:auto" onclick="onEscreverAmaoEvolucao('${admission.id}')" aria-label="Escrever com a Pencil" title="Escrever com a Pencil">${icone('pencil')}</button>
     </div>
     ${thumbs ? `<div class="wf-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:10px">${thumbs}</div>` : ''}
   `;
@@ -1425,7 +1452,7 @@ function htmlListaLabsRascunho() {
   return labsRascunho.map((l, i) => `
     <div class="list-item row">
       <span>${esc(l.label)}: ${esc(l.valor)}</span>
-      <button class="btn btn-ghost" style="width:auto;margin-top:0;padding:6px 8px" onclick="onRemoverLabRascunho(${i})" aria-label="Remover" title="Remover">🗑️</button>
+      <button class="btn btn-ghost" style="width:auto;margin-top:0;padding:6px 8px" onclick="onRemoverLabRascunho(${i})" aria-label="Remover" title="Remover">${icone('trash')}</button>
     </div>
   `).join('') || '<div class="list-item">Nenhum lab adicionado ainda.</div>';
 }
@@ -1585,9 +1612,9 @@ async function viewReport(ano, mes) {
     title: 'Relatório mensal', back: '/',
     body: `
       <div class="row" style="justify-content:center;gap:16px;margin-bottom:14px">
-        <button class="icon-btn" onclick="viewReport(${mes === 0 ? ano - 1 : ano}, ${mes === 0 ? 11 : mes - 1})">‹</button>
+        <button class="icon-btn" onclick="viewReport(${mes === 0 ? ano - 1 : ano}, ${mes === 0 ? 11 : mes - 1})" title="Mês anterior" aria-label="Mês anterior">${icone('chevron-left')}</button>
         <strong>${nomeMes}</strong>
-        <button class="icon-btn" onclick="viewReport(${mes === 11 ? ano + 1 : ano}, ${mes === 11 ? 0 : mes + 1})">›</button>
+        <button class="icon-btn" onclick="viewReport(${mes === 11 ? ano + 1 : ano}, ${mes === 11 ? 0 : mes + 1})" title="Próximo mês" aria-label="Próximo mês">${icone('chevron-right')}</button>
       </div>
 
       <div class="section-title">Altas por hipótese diagnóstica</div>
