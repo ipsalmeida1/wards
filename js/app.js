@@ -37,6 +37,7 @@ const LUCIDE_PATHS = {
   'chevron-right': '<path d="m9 18 6-6-6-6"/>',
   paperclip: '<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>',
   'list-checks': '<path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/>',
+  bed: '<path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/>',
 };
 function icone(nome, tamanho = 18) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${tamanho}" height="${tamanho}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;flex:none">${LUCIDE_PATHS[nome]}</svg>`;
@@ -96,7 +97,8 @@ function renderRoute() {
   if (parts[0] === 'relatorio') return viewReport();
   if (parts[0] === 'arquivo') return viewArchiveList();
   if (parts[0] === 'pendencias') return viewPendencias();
-  return viewPatientList();
+  if (parts[0] === 'pacientes') return viewPatientList();
+  return viewHome();
 }
 
 // Sem card/shell — tela isolada, antes de qualquer coisa do app aparecer.
@@ -255,6 +257,58 @@ function shell({ title, back, right, body, fabHtml }) {
   `);
 }
 
+// ---------- início ----------
+
+// Tela raiz (hash vazio) — de propósito NÃO é a lista de pacientes: chegar
+// aqui e já ter que decidir "pacientes, pendências, relatório ou arquivo"
+// evita que "Pacientes do dia" seja a porta de entrada obrigatória do app.
+// Os dois números do topo reaproveitam a mesma regra de "pendência" da
+// tela de Pendências (plano aberto OU prescrição de hoje não marcada) —
+// contam pacientes, não itens, pra bater com o que a tela de Pendências
+// mostra (uma seção por paciente).
+async function viewHome() {
+  const admissoes = await DB.where('admissions', (a) => a.status === 'ativo');
+  const hoje = hojeLocalISO();
+  let comPendencia = 0;
+  for (const a of admissoes) {
+    const temPlanoAberto = (await DB.where('planItems', (p) => p.admissionId === a.id && !p.concluido)).length > 0;
+    if (temPlanoAberto || a.prescricaoCheckDia !== hoje) comPendencia++;
+  }
+
+  const dataBruta = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+  const dataFormatada = dataBruta.charAt(0).toUpperCase() + dataBruta.slice(1);
+  const atalho = (rota, nome, label) => `
+    <div class="card tappable" onclick="nav('${rota}')">
+      <div class="row">
+        <span>${icone(nome)} ${label}</span>
+        ${icone('chevron-right', 16)}
+      </div>
+    </div>
+  `;
+
+  shell({
+    title: 'Wards',
+    right: `<button class="icon-btn" onclick="onSair()" title="Sair" aria-label="Sair">${icone('log-out')}</button>`,
+    body: `
+      <div class="sub" style="margin-bottom:14px">${esc(dataFormatada)}</div>
+      <div class="grid2" style="margin-bottom:14px">
+        <div class="card" style="margin-bottom:0;text-align:center">
+          <div style="font-size:28px;font-weight:600;line-height:1">${admissoes.length}</div>
+          <div class="sub">Paciente${admissoes.length === 1 ? '' : 's'} ativo${admissoes.length === 1 ? '' : 's'}</div>
+        </div>
+        <div class="card" style="margin-bottom:0;text-align:center">
+          <div style="font-size:28px;font-weight:600;line-height:1">${comPendencia}</div>
+          <div class="sub">Com pendência hoje</div>
+        </div>
+      </div>
+      ${atalho('pacientes', 'bed', 'Pacientes do dia')}
+      ${atalho('pendencias', 'list-checks', 'Pendências')}
+      ${atalho('relatorio', 'chart-column', 'Relatório mensal')}
+      ${atalho('arquivo', 'archive', 'Arquivo')}
+    `,
+  });
+}
+
 // ---------- lista de pacientes ----------
 
 async function viewPatientList(busca = '') {
@@ -291,7 +345,8 @@ async function viewPatientList(busca = '') {
 
   shell({
     title: 'Pacientes do dia',
-    right: `<button class="icon-btn" onclick="nav('pendencias')" title="Pendências" aria-label="Pendências">${icone('list-checks')}</button><button class="icon-btn" onclick="nav('arquivo')" title="Arquivo" aria-label="Arquivo">${icone('archive')}</button><button class="icon-btn" onclick="nav('relatorio')" title="Relatório" aria-label="Relatório">${icone('chart-column')}</button><button class="icon-btn" onclick="onSair()" title="Sair" aria-label="Sair">${icone('log-out')}</button>`,
+    back: '/',
+    right: `<button class="icon-btn" onclick="nav('pendencias')" title="Pendências" aria-label="Pendências">${icone('list-checks')}</button><button class="icon-btn" onclick="nav('arquivo')" title="Arquivo" aria-label="Arquivo">${icone('archive')}</button><button class="icon-btn" onclick="nav('relatorio')" title="Relatório" aria-label="Relatório">${icone('chart-column')}</button>`,
     body: `
       <input class="searchbar" placeholder="Leito, iniciais ou motivo" value="${esc(busca)}"
         oninput="viewPatientList(this.value)">
@@ -439,7 +494,7 @@ async function excluirAdmissaoDeVez(admissionId) {
 
 function viewNewPatient() {
   shell({
-    title: 'Novo paciente', back: '/',
+    title: 'Novo paciente', back: 'pacientes',
     body: `
       <label>Leito</label><input id="f-leito" type="text" placeholder="Ex.: 302-B">
       <label>Nome completo do paciente</label><input id="f-nome" type="text" placeholder="Ex.: Maria da Silva Santos">
@@ -500,7 +555,7 @@ async function viewPatientDetail(admissionId, tab) {
   // botão próprio nenhum — grava sozinho (ver onDigitarNotepad).
   shell({
     title: `${admission.leito} — ${patient?.nomeCompleto || patient?.iniciais || ''}`,
-    back: '/',
+    back: 'pacientes',
     right: `<button class="icon-btn no-print" onclick="window.print()" title="Imprimir" aria-label="Imprimir">${icone('printer')}</button>`,
     body: `<div class="tabs">${tabsHtml}</div>${body}`,
     fabHtml: tab === 'exames'
