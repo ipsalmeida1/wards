@@ -906,14 +906,21 @@ async function tabExames(admission) {
   const lab = exames.filter((e) => e.categoria !== 'imagem');
 
   function cartao(e) {
+    const titulo = e.categoria === 'imagem'
+      ? (e.tipo ? esc(e.tipo) : fmtData(e.data))
+      : `Exame laboratorial — ${fmtData(e.data)}`;
+    const linhaLabs = LAB_FIELDS.filter((k) => e.labsBasicos && e.labsBasicos[k] != null)
+      .map((k) => `${LAB_LABEL[k]} ${e.labsBasicos[k]}`)
+      .join(' · ');
     return `
       <div class="card tappable" onclick="nav('exame-ver/${e.id}')">
         <div class="row">
-          <strong>${e.categoria === 'imagem' && e.tipo ? esc(e.tipo) : fmtData(e.data)}</strong>
+          <strong>${titulo}</strong>
           ${contagemAnexos[e.id] ? `<span class="pill" style="background:var(--accent-soft);color:var(--accent)">${icone('paperclip', 12)} ${contagemAnexos[e.id]}</span>` : ''}
         </div>
         ${e.categoria === 'imagem' ? `<div class="sub">${fmtData(e.data)}</div>` : ''}
-        <div class="sub">${renderTexto(e.resultadoResumo) || 'Sem resumo'}</div>
+        ${linhaLabs ? `<div style="font-size:16px;margin-top:4px">${esc(linhaLabs)}</div>` : ''}
+        ${(!linhaLabs || e.resultadoResumo) ? `<div class="sub" style="margin-top:2px">${renderTexto(e.resultadoResumo) || 'Sem resumo'}</div>` : ''}
       </div>
     `;
   }
@@ -1271,11 +1278,15 @@ async function migrarEvolucaoAntiga(admission) {
 // "K"/"Na"/"Cl" maiúsculos evita confundir com preposição comum do
 // português) seguido de número. \b antes do token evita casar no meio de
 // outra palavra.
+// Apelidos que não seriam achados sozinhos pelo prefixo do nome completo em
+// LAB_LABEL (ver resolverLabPorApelido) — o resto dos ~50 exames é
+// encontrado só por prefixo, sem precisar de entrada aqui.
 const LAB_TOKEN_MAP = {
   Hb: 'hb', Ht: 'ht', VCM: 'vcm', CHCM: 'chcm', Plaq: 'plaq',
   Leucócitos: 'leuco', Leucocitos: 'leuco', Leuco: 'leuco',
   PCR: 'pcr', Ureia: 'ureia', Uréia: 'ureia', Creat: 'creat', Cr: 'creat',
   Na: 'na', K: 'k', Cl: 'cl',
+  AST: 'tgo', ALT: 'tgp', Bicarbonato: 'hco3', Glicose: 'glicemia', iCa: 'ica',
 };
 function extrairLabsDoTexto(texto) {
   const achados = {};
@@ -1474,8 +1485,44 @@ async function onAddVitalSigns(admissionId) {
 
 // ---------- novo exame ----------
 
-const LAB_FIELDS = ['hb', 'ht', 'vcm', 'chcm', 'plaq', 'leuco', 'pcr', 'ureia', 'creat', 'na', 'k', 'cl'];
-const LAB_LABEL = { hb: 'Hb', ht: 'Ht', vcm: 'VCM', chcm: 'CHCM', plaq: 'Plaq', leuco: 'Leucócitos', pcr: 'PCR', ureia: 'Ureia', creat: 'Creatinina', na: 'Na', k: 'K', cl: 'Cl' };
+const LAB_FIELDS = [
+  // "p" (Fósforo) precisa vir antes de "plaq" nesta lista — resolverLabPorApelido
+  // resolve pelo primeiro nome que comece com o que foi digitado, e "P" sozinho
+  // é o apelido clínico real de Fósforo (ninguém abrevia Plaquetas pra "P").
+  'p',
+  // Hemograma
+  'hb', 'ht', 'vcm', 'hcm', 'chcm', 'rdw', 'leuco',
+  'bast', 'segm', 'linf', 'mono', 'eosino', 'plaq',
+  // Coagulação
+  'inr', 'ttpa', 'fibrinogenio',
+  // Renal / eletrólitos
+  'ureia', 'creat', 'acidourico', 'na', 'k', 'cl', 'ca', 'ica', 'mg', 'ra',
+  // Hepatograma
+  'tgo', 'tgp', 'fa', 'ggt', 'bt', 'bd', 'bi', 'alb', 'pt',
+  // Inflamatórios/infecciosos
+  'pcr', 'vhs', 'pct',
+  // Endócrino/metabólico
+  'glicemia', 'hba1c', 'tsh', 't4l',
+  // Cardíaco
+  'tropo', 'ck', 'ckmb', 'bnp',
+  // Gasometria (venosa ou arterial — mesmos campos servem pras duas)
+  'ph', 'pco2', 'po2', 'hco3', 'be', 'lactato', 'sato2gaso',
+  // Urológico
+  'psat', 'psal',
+];
+const LAB_LABEL = {
+  hb: 'Hb', ht: 'Ht', vcm: 'VCM', hcm: 'HCM', chcm: 'CHCM', rdw: 'RDW', plaq: 'Plaq', leuco: 'Leucócitos',
+  bast: 'Bastões', segm: 'Segmentados', linf: 'Linfócitos', mono: 'Monócitos', eosino: 'Eosinófilos',
+  inr: 'INR', ttpa: 'TTPA', fibrinogenio: 'Fibrinogênio',
+  ureia: 'Ureia', creat: 'Creatinina', acidourico: 'Ácido Úrico', na: 'Na', k: 'K', cl: 'Cl',
+  ca: 'Ca', ica: 'Ca iônico', mg: 'Mg', p: 'P', ra: 'RA (Reserva Alcalina)',
+  tgo: 'TGO/AST', tgp: 'TGP/ALT', fa: 'FA', ggt: 'GGT', bt: 'BT', bd: 'BD', bi: 'BI', alb: 'Albumina', pt: 'Proteínas totais',
+  pcr: 'PCR', vhs: 'VHS', pct: 'Procalcitonina',
+  glicemia: 'Glicemia', hba1c: 'HbA1c', tsh: 'TSH', t4l: 'T4 livre',
+  tropo: 'Troponina', ck: 'CK', ckmb: 'CKMB', bnp: 'BNP',
+  ph: 'pH', pco2: 'pCO2', po2: 'pO2', hco3: 'HCO3', be: 'BE', lactato: 'Lactato', sato2gaso: 'SatO2 (gaso)',
+  psat: 'PSA total', psal: 'PSA livre',
+};
 
 // Busca inteligente do nome do lab: "Cr" ou "creat" acham Creatinina, "K"
 // acha Potássio etc. Reaproveita o MESMO dicionário de apelidos que já
@@ -1488,12 +1535,14 @@ function normalizarLabApelido(s) {
 function resolverLabPorApelido(texto) {
   const alvo = normalizarLabApelido(texto);
   if (!alvo) return null;
+  // 1) apelido clínico exato (Cr, K, AST, Leuco, Uréia, Bicarbonato...).
   for (const [apelido, key] of Object.entries(LAB_TOKEN_MAP)) {
     if (normalizarLabApelido(apelido) === alvo) return { key, label: LAB_LABEL[key] };
   }
-  for (const [apelido, key] of Object.entries(LAB_TOKEN_MAP)) {
-    if (normalizarLabApelido(apelido).startsWith(alvo)) return { key, label: LAB_LABEL[key] };
-  }
+  // 2) o NOME DO EXAME começa com o que foi digitado — nunca o contrário.
+  // Checar se um apelido comprido começa com a sigla curta digitada (ex.:
+  // "BI" batendo em "Bicarbonato", ou "P" em "Plaq") dá falso positivo
+  // toda hora; só essa direção é segura.
   for (const key of LAB_FIELDS) {
     if (normalizarLabApelido(LAB_LABEL[key]).startsWith(alvo)) return { key, label: LAB_LABEL[key] };
   }
@@ -1572,7 +1621,8 @@ function viewNewExam(admissionId, categoria = 'lab') {
       <label>Data</label>
       <input id="e-data" type="date" value="${hojeLocalISO()}">
       ${categoria === 'imagem' ? camposImagem : camposLab}
-      ${categoria === 'imagem' ? '<p style="font-size:12.5px;color:var(--ink-soft)">Depois de salvar, você anexa a foto do laudo/imagem na tela do exame.</p>' : ''}
+      <label style="margin-top:14px">Fotos do laudo (opcional — pode tirar agora, antes de escrever qualquer coisa)</label>
+      <input type="file" id="e-fotos" accept="image/*" multiple>
       <button class="btn btn-primary" onclick="salvarExame('${admissionId}','${categoria}')">Salvar</button>
     `,
   });
@@ -1590,6 +1640,11 @@ async function salvarExame(admissionId, categoria) {
     for (const l of labsRascunho) exame.labsBasicos[l.key] = l.valor;
   }
   await DB.put('exams', exame);
+  for (const file of document.getElementById('e-fotos').files) {
+    const id = newId();
+    const storagePath = await subirAnexo(id, file);
+    await DB.put('attachments', { id, examId: exame.id, tipo: file.type, storagePath, criadoEm: Date.now() });
+  }
   nav(`paciente/${admissionId}/exames`);
 }
 

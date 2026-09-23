@@ -33,15 +33,15 @@
   --danger: #a3352b;
   --highlight: #f5df8e;
   --on-highlight: #3d3210;
-  /* Só --r-full sobrevive intacto — pill de status e ícone circular
-     continuam redondos (estado semântico, não identidade de marca). Todo
-     o resto do app usa --r-xs/sm/md/lg pra canto, então zerar os quatro
-     aqui já deixa botão/card/input/tab/diálogo quadrados sem tocar em
-     nenhuma das ~30 regras que os referenciam. */
-  --r-xs: 0px;
-  --r-sm: 0px;
-  --r-md: 0px;
-  --r-lg: 0px;
+  /* Cantos arredondados, a pedido — volta a usar a escala em vez de zerar
+     os quatro tokens (era assim antes do passo "WIRED" desta sessão). Como
+     todo o app usa --r-xs/sm/md/lg (nunca um valor solto), essa troca
+     sozinha já arredonda botão/card/input/tab/diálogo sem tocar nas ~30
+     regras que os referenciam. */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 14px;
   --r-full: 9999px;
   /* Sem sombra — o WIRED usa hairline/borda como única pista de elevação.
      Mesma lógica de token único: zerar aqui vale pra todo mundo que usa
