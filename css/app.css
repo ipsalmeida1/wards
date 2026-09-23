@@ -83,7 +83,7 @@ header.topbar h1 {
   font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
   font-size: 22px; margin: 0; font-weight: 500; letter-spacing: -0.2px; line-height: 1.3;
 }
-header.topbar button.icon-btn {
+.icon-btn {
   background: none; border: none; font-size: 20px; color: var(--on-canvas); padding: 4px 8px;
 }
 header.topbar .back { font-size: 15px; color: var(--on-canvas-mute); background: none; border: none; padding: 4px 4px; font-weight: 500; }

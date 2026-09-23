@@ -36,6 +36,7 @@ const LUCIDE_PATHS = {
   'chevron-left': '<path d="m15 18-6-6 6-6"/>',
   'chevron-right': '<path d="m9 18 6-6-6-6"/>',
   paperclip: '<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>',
+  'list-checks': '<path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/>',
 };
 function icone(nome, tamanho = 18) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${tamanho}" height="${tamanho}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;flex:none">${LUCIDE_PATHS[nome]}</svg>`;
@@ -94,6 +95,7 @@ function renderRoute() {
   if (parts[0] === 'exame-ver' && parts[1]) return viewExamDetail(parts[1]);
   if (parts[0] === 'relatorio') return viewReport();
   if (parts[0] === 'arquivo') return viewArchiveList();
+  if (parts[0] === 'pendencias') return viewPendencias();
   return viewPatientList();
 }
 
@@ -289,7 +291,7 @@ async function viewPatientList(busca = '') {
 
   shell({
     title: 'Pacientes do dia',
-    right: `<button class="icon-btn" onclick="nav('arquivo')" title="Arquivo" aria-label="Arquivo">${icone('archive')}</button><button class="icon-btn" onclick="nav('relatorio')" title="Relatório" aria-label="Relatório">${icone('chart-column')}</button><button class="icon-btn" onclick="onSair()" title="Sair" aria-label="Sair">${icone('log-out')}</button>`,
+    right: `<button class="icon-btn" onclick="nav('pendencias')" title="Pendências" aria-label="Pendências">${icone('list-checks')}</button><button class="icon-btn" onclick="nav('arquivo')" title="Arquivo" aria-label="Arquivo">${icone('archive')}</button><button class="icon-btn" onclick="nav('relatorio')" title="Relatório" aria-label="Relatório">${icone('chart-column')}</button><button class="icon-btn" onclick="onSair()" title="Sair" aria-label="Sair">${icone('log-out')}</button>`,
     body: `
       <input class="searchbar" placeholder="Leito, iniciais ou motivo" value="${esc(busca)}"
         oninput="viewPatientList(this.value)">
@@ -569,7 +571,7 @@ async function onTogglePrescricaoCheck(admissionId) {
   const hoje = hojeLocalISO();
   a.prescricaoCheckDia = a.prescricaoCheckDia === hoje ? null : hoje;
   await DB.put('admissions', a);
-  viewPatientList();
+  renderRoute();
 }
 
 // Resumo por data da HDA — mecânico, sem IA: acha marcas "dia DD/MM" no
@@ -1665,6 +1667,58 @@ async function viewArchiveList() {
         <div class="sub">${esc(patients[a.patientId]?.nomeCompleto || patients[a.patientId]?.iniciais || '')} — admitido em ${fmtData(a.dataAdmissao)}</div>
       </div>
     `).join('') || '<div class="empty">Nada arquivado ainda.</div>',
+  });
+}
+
+// ---------- pendências do dia ----------
+
+// Reúne, de todos os pacientes ativos, o que ainda falta HOJE: planos não
+// concluídos (de qualquer categoria/data — um plano aberto continua
+// pendente até ser marcado, não só no dia em que foi criado) e a prescrição
+// do dia ainda não marcada (esse sim é por data, mesmo esquema do
+// quadradinho na lista de pacientes). Paciente sem pendência nenhuma nem
+// aparece — é uma lista do que falta, não um resumo de todo mundo.
+// Marcar qualquer item aqui reaproveita exatamente as mesmas funções da
+// ficha do paciente (togglePlano, onTogglePrescricaoCheck), que já
+// re-renderizam a rota atual sozinhas.
+async function viewPendencias() {
+  const admissoes = (await DB.where('admissions', (a) => a.status === 'ativo'))
+    .sort((a, b) => (a.leito || '').localeCompare(b.leito || ''));
+  const patients = Object.fromEntries((await DB.all('patients')).map((p) => [p.id, p]));
+  const hoje = hojeLocalISO();
+
+  const secoes = (await Promise.all(admissoes.map(async (a) => {
+    const planos = (await DB.where('planItems', (p) => p.admissionId === a.id && !p.concluido))
+      .sort((x, y) => x.criadoEm - y.criadoEm);
+    const prescricaoPendente = a.prescricaoCheckDia !== hoje;
+    if (!planos.length && !prescricaoPendente) return '';
+
+    const p = patients[a.patientId] || {};
+    const itemPrescricao = prescricaoPendente ? `
+      <div class="list-item row" onclick="onTogglePrescricaoCheck('${a.id}')" style="cursor:pointer">
+        <span>${icone('square')} Prescrição de hoje</span>
+      </div>
+    ` : '';
+    const itensPlano = planos.map((pl) => `
+      <div class="list-item row" onclick="togglePlano('${pl.id}')" style="cursor:pointer">
+        <span>${icone('square')} ${renderTexto(pl.descricao)}</span>
+      </div>
+    `).join('');
+
+    return `
+      <div class="card">
+        <div class="row tappable" onclick="nav('paciente/${a.id}')">
+          <span class="leito">${esc(a.leito)}</span>
+          <span class="sub">${esc(p.nomeCompleto || p.iniciais || '')}</span>
+        </div>
+        ${itemPrescricao}${itensPlano}
+      </div>
+    `;
+  }))).filter(Boolean);
+
+  shell({
+    title: 'Pendências', back: '/',
+    body: secoes.join('') || '<div class="empty">Tudo em dia — nenhuma pendência hoje.</div>',
   });
 }
 
