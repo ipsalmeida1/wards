@@ -4,10 +4,13 @@
 const { Store: DB, uuid: newId } = window.WardsDB;
 const $app = () => document.getElementById('app');
 
-function hojeLocalISO() {
-  const d = new Date();
+function timestampParaInputISO(ts) {
+  const d = new Date(ts);
   const off = d.getTimezoneOffset();
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+}
+function hojeLocalISO() {
+  return timestampParaInputISO(Date.now());
 }
 function dataLocalDeInput(valorYYYYMMDD) {
   const [ano, mes, dia] = valorYYYYMMDD.split('-').map(Number);
@@ -982,19 +985,40 @@ async function viewExamDetail(examId) {
 
   const labs = exame.labsBasicos || {};
   const labsHtml = LAB_FIELDS.filter((k) => labs[k] != null)
-    .map((k) => `<span class="pill" style="background:var(--accent-soft);color:var(--accent)">${LAB_LABEL[k]}: ${labs[k]}</span>`)
-    .join(' ');
+    .map((k) => `
+      <span class="pill" style="background:var(--accent-soft);color:var(--accent);display:inline-flex;align-items:center;gap:4px">
+        ${LAB_LABEL[k]}: ${labs[k]}
+        <button class="icon-btn" style="width:auto;padding:0;font-size:12px" onclick="onRemoverLabExame('${examId}','${k}')" aria-label="Remover ${LAB_LABEL[k]}" title="Remover">${icone('trash', 12)}</button>
+      </span>
+    `).join(' ');
   const temTipo = exame.categoria === 'imagem' || exame.categoria === 'cultura';
 
   shell({
     title: temTipo && exame.tipo ? exame.tipo : fmtData(exame.data),
     back: admission ? `paciente/${admission.id}/exames` : '/',
+    right: `<button class="icon-btn" onclick="onExcluirExame('${examId}','${exame.admissionId}')" title="Excluir exame" aria-label="Excluir exame">${icone('trash')}</button>`,
     body: `
-      <div class="card">
-        ${temTipo ? `<div class="sub" style="margin-bottom:6px">${fmtData(exame.data)}</div>` : ''}
-        ${labsHtml ? `<div style="margin-bottom:8px">${labsHtml}</div>` : ''}
-        <div>${renderTexto(exame.resultadoResumo) || 'Sem resumo'}</div>
-      </div>
+      <label>Data</label>
+      <input id="e-data-edit" type="date" value="${timestampParaInputISO(exame.data)}" oninput="salvarExameDebounced('${examId}')">
+      ${temTipo ? `
+        <label>Tipo</label>
+        <input id="e-tipo-edit" type="text" value="${esc(exame.tipo || '')}" oninput="salvarExameDebounced('${examId}')">
+      ` : ''}
+      ${!temTipo ? `
+        <label>Labs</label>
+        <div class="card">
+          ${labsHtml || '<div class="sub">Nenhum lab registrado ainda.</div>'}
+          <div class="grid2" style="margin-top:10px">
+            <input id="lab-edit-nome" type="text" placeholder="Ex.: Cr, K, Hb..." onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabExame('${examId}')}">
+            <input id="lab-edit-valor" type="text" inputmode="decimal" placeholder="Valor" onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabExame('${examId}')}">
+          </div>
+          <button class="btn btn-secondary" style="margin-top:10px" onclick="onAdicionarLabExame('${examId}')">Adicionar</button>
+        </div>
+      ` : ''}
+      <label style="margin-top:14px">${temTipo ? 'Resultado / laudo' : 'Resumo / demais exames'}</label>
+      <textarea id="e-resumo-edit" oninput="salvarExameDebounced('${examId}')" placeholder="Envolva um trecho com ==assim== pra destacar">${esc(exame.resultadoResumo || '')}</textarea>
+      <div id="exame-status" class="sub" style="text-align:right;margin-top:4px">${exame.resultadoResumo || Object.keys(labs).length ? 'Salvo' : ''}</div>
+
       <div class="section-title">Fotos / laudo</div>
       <div class="wf-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">
         ${thumbs}
@@ -1004,6 +1028,71 @@ async function viewExamDetail(examId) {
       <button class="btn btn-secondary" onclick="onEscreverAmaoExame('${examId}')">${icone('pencil')} Escrever à mão</button>
     `,
   });
+}
+
+// Sem botão "Salvar": data/tipo/resumo do exame gravam sozinhos 600ms
+// depois de parar de digitar — mesmo esquema de HDA/Prescrições/Notepad.
+let debounceSalvarExame = null;
+function salvarExameDebounced(examId) {
+  const statusEl = document.getElementById('exame-status');
+  if (statusEl) statusEl.textContent = 'Salvando…';
+  clearTimeout(debounceSalvarExame);
+  debounceSalvarExame = setTimeout(async () => {
+    const exame = await DB.get('exams', examId);
+    exame.data = dataLocalDeInput(document.getElementById('e-data-edit').value);
+    const tipoEl = document.getElementById('e-tipo-edit');
+    if (tipoEl) exame.tipo = tipoEl.value.trim();
+    exame.resultadoResumo = document.getElementById('e-resumo-edit').value.trim();
+    await DB.put('exams', exame);
+    const statusAtual = document.getElementById('exame-status');
+    if (statusAtual) statusAtual.textContent = `Salvo às ${fmtData(Date.now(), true).split(' ')[1]}`;
+  }, 600);
+}
+
+// Labs individuais do exame já salvo gravam na hora (não têm rascunho —
+// reaproveita o mesmo resolverLabPorApelido do fluxo de criação).
+async function onAdicionarLabExame(examId) {
+  const nomeEl = document.getElementById('lab-edit-nome');
+  const valorEl = document.getElementById('lab-edit-valor');
+  const nome = nomeEl.value.trim();
+  const valorTexto = valorEl.value.trim();
+  if (!nome || !valorTexto) return;
+  const resolvido = resolverLabPorApelido(nome);
+  if (!resolvido) {
+    Dialog.avisar(`Lab "${nome}" não reconhecido — tente a sigla usual (Cr, K, Hb...) ou o nome completo.`, { tipo: 'erro' });
+    return;
+  }
+  const valor = Number(valorTexto.replace(',', '.'));
+  if (Number.isNaN(valor)) {
+    Dialog.avisar('O valor precisa ser um número.', { tipo: 'erro' });
+    return;
+  }
+  const exame = await DB.get('exams', examId);
+  exame.labsBasicos = { ...(exame.labsBasicos || {}), [resolvido.key]: valor };
+  await DB.put('exams', exame);
+  viewExamDetail(examId);
+}
+async function onRemoverLabExame(examId, key) {
+  const exame = await DB.get('exams', examId);
+  delete exame.labsBasicos[key];
+  await DB.put('exams', exame);
+  viewExamDetail(examId);
+}
+
+// "Excluir" aqui é de vez — some o exame e as fotos ligadas a ele, por
+// isso o confirm antes (mesmo padrão de onExcluirAdmissao).
+async function onExcluirExame(examId, admissionId) {
+  const ok = await Dialog.confirmar({
+    titulo: 'Excluir exame?',
+    mensagem: 'O exame e as fotos anexadas a ele serão perdidos para sempre — sem volta.',
+    textoConfirmar: 'Excluir de vez',
+    perigoso: true,
+  });
+  if (!ok) return;
+  const anexos = await DB.where('attachments', (a) => a.examId === examId);
+  for (const a of anexos) await DB.remove('attachments', a.id);
+  await DB.remove('exams', examId);
+  nav(`paciente/${admissionId}/exames`);
 }
 
 async function onAddAttachment(examId, fileList) {
