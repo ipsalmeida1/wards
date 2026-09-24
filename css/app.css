@@ -132,6 +132,30 @@ main { flex: 1; padding: 12px 16px 100px; overflow-y: auto; }
 .tabs.vertical { flex-direction: column; overflow-x: visible; }
 .tabs.vertical button { width: 100%; text-align: left; }
 
+/* Gaveta lateral (js/app.js, viewPatientDetail) — HDA/A.P/Sinais Vitais/
+   Pareceres saem da barra de cima e viram isto: entra deslizando da
+   esquerda ("aparecer"), sai deslizando de volta ("desaparecer"), com um
+   véu escuro atrás igual ao dos diálogos (.dlg-overlay). */
+.side-drawer-overlay {
+  position: fixed; inset: 0; z-index: 90; background: rgba(0, 0, 0, 0.45);
+}
+.side-drawer {
+  position: fixed; top: 0; bottom: 0; left: 0; z-index: 91;
+  width: 240px; max-width: 78vw;
+  background: var(--surface); box-shadow: var(--shadow-float);
+  padding: calc(16px + env(safe-area-inset-top)) 0 calc(16px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  transform: translateX(-100%);
+  transition: transform 220ms var(--ease-out);
+}
+.side-drawer.aberta { transform: translateX(0); }
+.side-drawer-item {
+  display: flex; align-items: center; gap: 12px; padding: 14px 18px;
+  font-size: 15px; color: var(--ink); border-bottom: 1px solid var(--hairline);
+  cursor: pointer;
+}
+.side-drawer-item.active { background: var(--accent-soft); font-weight: 600; }
+
 .section-title {
   font-size: 12px; text-transform: uppercase; letter-spacing: .72px; color: var(--on-canvas-mute);
   margin: 14px 0 6px; font-weight: 700;
@@ -347,7 +371,7 @@ mark {
    movimento (scale/transform) some. Cobre todo :active/entrada novos
    desta troca de visual. */
 @media (prefers-reduced-motion: reduce) {
-  .btn, .tappable, .tabs button, .dlg-card {
+  .btn, .tappable, .tabs button, .dlg-card, .side-drawer {
     transition-duration: 0ms !important;
   }
 }

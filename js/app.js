@@ -41,6 +41,12 @@ const LUCIDE_PATHS = {
   paperclip: '<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>',
   'list-checks': '<path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/>',
   bed: '<path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/>',
+  'file-text': '<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  'heart-pulse': '<path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"/><path d="M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/>',
+  activity: '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
+  'message-square': '<path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/>',
+  'panel-left': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
 };
 function icone(nome, tamanho = 18) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${tamanho}" height="${tamanho}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;flex:none">${LUCIDE_PATHS[nome]}</svg>`;
@@ -524,21 +530,52 @@ async function salvarNovoPaciente() {
 
 // ---------- ficha do paciente ----------
 
-const TABS = ['hda', 'comorbidades', 'vitais', 'evolucoes', 'exames', 'planos', 'prescricoes', 'pareceres'];
+// HDA/A.P/Sinais Vitais/Pareceres saem da barra de abas de cima e viram uma
+// gaveta lateral (ícone + rótulo), que abre/fecha por cima do conteúdo —
+// deixa só 4 abas na barra de cima (era 8), mais limpo e sem rolagem
+// horizontal escondendo metade delas.
+const TABS_GAVETA = ['hda', 'comorbidades', 'vitais', 'pareceres'];
+const TABS_TOPO = ['evolucoes', 'exames', 'planos', 'prescricoes'];
 const TAB_LABEL = {
   hda: 'HDA', comorbidades: 'A.P', vitais: 'Sinais Vitais', exames: 'Exames',
   pareceres: 'Pareceres', planos: 'Planos', evolucoes: 'Bloco de Notas',
   prescricoes: 'Prescrições',
 };
+const TAB_ICON = { hda: 'file-text', comorbidades: 'heart-pulse', vitais: 'activity', pareceres: 'message-square' };
+
+let gavetaAbasAberta = false;
+function onAlternarGavetaAbas() {
+  gavetaAbasAberta = !gavetaAbasAberta;
+  renderRoute();
+}
+function onEscolherAbaGaveta(admissionId, t) {
+  gavetaAbasAberta = false;
+  nav(`paciente/${admissionId}/${t}`);
+}
 
 async function viewPatientDetail(admissionId, tab) {
   const admission = await getAdmission(admissionId);
   if (!admission) return viewPatientList();
   const patient = await getPatient(admission.patientId);
 
-  const tabsHtml = TABS.map((t) =>
+  const naGaveta = TABS_GAVETA.includes(tab);
+  const gatilhoGaveta = naGaveta
+    ? `<button class="active" onclick="onAlternarGavetaAbas()" style="display:flex;align-items:center;gap:6px">${icone(TAB_ICON[tab])} ${TAB_LABEL[tab]}</button>`
+    : `<button onclick="onAlternarGavetaAbas()" aria-label="Mais abas" title="Mais abas">${icone('panel-left')}</button>`;
+  const tabsHtml = gatilhoGaveta + TABS_TOPO.map((t) =>
     `<button class="${t === tab ? 'active' : ''}" onclick="nav('paciente/${admissionId}/${t}')">${TAB_LABEL[t]}</button>`
   ).join('');
+
+  const gavetaHtml = `
+    <div class="side-drawer-overlay" style="display:${gavetaAbasAberta ? 'block' : 'none'}" onclick="onAlternarGavetaAbas()"></div>
+    <div class="side-drawer ${gavetaAbasAberta ? 'aberta' : ''}">
+      ${TABS_GAVETA.map((t) => `
+        <div class="side-drawer-item ${t === tab ? 'active' : ''}" onclick="onEscolherAbaGaveta('${admissionId}','${t}')">
+          ${icone(TAB_ICON[t], 20)} ${TAB_LABEL[t]}
+        </div>
+      `).join('')}
+    </div>
+  `;
 
   vitaisChartPontos = null;
   let body = '';
@@ -560,7 +597,7 @@ async function viewPatientDetail(admissionId, tab) {
     title: `${admission.leito} — ${patient?.nomeCompleto || patient?.iniciais || ''}`,
     back: 'pacientes',
     right: `<button class="icon-btn no-print" onclick="window.print()" title="Imprimir" aria-label="Imprimir">${icone('printer')}</button>`,
-    body: `<div class="tabs">${tabsHtml}</div>${body}`,
+    body: `<div class="tabs">${tabsHtml}</div>${gavetaHtml}${body}`,
     fabHtml: tab === 'exames'
       ? `<button class="btn btn-primary" style="width:100%" onclick="nav('exame/${admissionId}')">+ Exame</button>`
       : '',
