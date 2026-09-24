@@ -903,22 +903,41 @@ async function tabExames(admission) {
   // exames antigos (de antes desta separação existir) não têm `categoria` —
   // tratamos como laboratorial, que era o único tipo que existia até então
   const imagem = exames.filter((e) => e.categoria === 'imagem');
-  const lab = exames.filter((e) => e.categoria !== 'imagem');
+  const cultura = exames.filter((e) => e.categoria === 'cultura');
+  const lab = exames.filter((e) => e.categoria !== 'imagem' && e.categoria !== 'cultura')
+    .sort((a, b) => b.data - a.data);
 
+  // Imagem/cultura têm cara de card (tipo, data, laudo) — uma foto de
+  // exame ou o resultado de uma cultura são coisas discretas, cada uma
+  // merece sua própria caixa.
   function cartao(e) {
-    const titulo = e.categoria === 'imagem'
-      ? (e.tipo ? esc(e.tipo) : fmtData(e.data))
-      : `Exame laboratorial — ${fmtData(e.data)}`;
-    const linhaLabs = LAB_FIELDS.filter((k) => e.labsBasicos && e.labsBasicos[k] != null)
-      .map((k) => `${LAB_LABEL[k]} ${e.labsBasicos[k]}`)
-      .join(' · ');
+    const titulo = e.tipo ? esc(e.tipo) : fmtData(e.data);
     return `
       <div class="card tappable" onclick="nav('exame-ver/${e.id}')">
         <div class="row">
           <strong>${titulo}</strong>
           ${contagemAnexos[e.id] ? `<span class="pill" style="background:var(--accent-soft);color:var(--accent)">${icone('paperclip', 12)} ${contagemAnexos[e.id]}</span>` : ''}
         </div>
-        ${e.categoria === 'imagem' ? `<div class="sub">${fmtData(e.data)}</div>` : ''}
+        <div class="sub">${fmtData(e.data)}</div>
+        <div class="sub" style="margin-top:2px">${renderTexto(e.resultadoResumo) || 'Sem resumo'}</div>
+      </div>
+    `;
+  }
+
+  // Laboratoriais é o oposto: uma coluna vertical só, que cresce por dentro
+  // conforme os dias passam — cada exame novo é uma linha a mais na MESMA
+  // lista, não mais um card separado (mesmo padrão de card+list-item já
+  // usado em Planos/Pareceres).
+  function linhaLab(e) {
+    const linhaLabs = LAB_FIELDS.filter((k) => e.labsBasicos && e.labsBasicos[k] != null)
+      .map((k) => `${LAB_LABEL[k]} ${e.labsBasicos[k]}`)
+      .join(' · ');
+    return `
+      <div class="list-item tappable" onclick="nav('exame-ver/${e.id}')">
+        <div class="row">
+          <strong>Exame laboratorial — ${fmtData(e.data)}</strong>
+          ${contagemAnexos[e.id] ? `<span class="pill" style="background:var(--accent-soft);color:var(--accent)">${icone('paperclip', 12)} ${contagemAnexos[e.id]}</span>` : ''}
+        </div>
         ${linhaLabs ? `<div style="font-size:16px;margin-top:4px">${esc(linhaLabs)}</div>` : ''}
         ${(!linhaLabs || e.resultadoResumo) ? `<div class="sub" style="margin-top:2px">${renderTexto(e.resultadoResumo) || 'Sem resumo'}</div>` : ''}
       </div>
@@ -929,9 +948,12 @@ async function tabExames(admission) {
     <div class="section-title">Exames de imagem</div>
     ${imagem.map(cartao).join('') || '<div class="empty">Nenhum exame de imagem registrado.</div>'}
 
+    <div class="section-title">Culturas</div>
+    ${cultura.map(cartao).join('') || '<div class="empty">Nenhuma cultura registrada.</div>'}
+
     <div class="section-title">Exames laboratoriais</div>
     <button class="btn btn-secondary" onclick="nav('tendencia/${admission.id}')">Ver tendência</button>
-    ${lab.map(cartao).join('') || '<div class="empty">Nenhum exame laboratorial registrado.</div>'}
+    ${lab.length ? `<div class="card">${lab.map(linhaLab).join('')}</div>` : '<div class="empty">Nenhum exame laboratorial registrado.</div>'}
   `;
 }
 
@@ -962,14 +984,14 @@ async function viewExamDetail(examId) {
   const labsHtml = LAB_FIELDS.filter((k) => labs[k] != null)
     .map((k) => `<span class="pill" style="background:var(--accent-soft);color:var(--accent)">${LAB_LABEL[k]}: ${labs[k]}</span>`)
     .join(' ');
-  const ehImagem = exame.categoria === 'imagem';
+  const temTipo = exame.categoria === 'imagem' || exame.categoria === 'cultura';
 
   shell({
-    title: ehImagem && exame.tipo ? exame.tipo : fmtData(exame.data),
+    title: temTipo && exame.tipo ? exame.tipo : fmtData(exame.data),
     back: admission ? `paciente/${admission.id}/exames` : '/',
     body: `
       <div class="card">
-        ${ehImagem ? `<div class="sub" style="margin-bottom:6px">${fmtData(exame.data)}</div>` : ''}
+        ${temTipo ? `<div class="sub" style="margin-bottom:6px">${fmtData(exame.data)}</div>` : ''}
         ${labsHtml ? `<div style="margin-bottom:8px">${labsHtml}</div>` : ''}
         <div>${renderTexto(exame.resultadoResumo) || 'Sem resumo'}</div>
       </div>
@@ -1611,16 +1633,23 @@ function viewNewExam(admissionId, categoria = 'lab') {
     <label>Achados / laudo</label>
     <textarea id="e-resumo" placeholder="Envolva um trecho com ==assim== pra destacar"></textarea>
   `;
+  const camposCultura = `
+    <label>Tipo de cultura</label>
+    <input id="e-tipo" type="text" placeholder="Ex.: Hemocultura, Urocultura, Cultura de secreção...">
+    <label>Resultado / antibiograma</label>
+    <textarea id="e-resumo" placeholder="Envolva um trecho com ==assim== pra destacar"></textarea>
+  `;
   shell({
     title: 'Exame', back: `paciente/${admissionId}/exames`,
     body: `
       <div class="tabs">
         <button class="${categoria === 'lab' ? 'active' : ''}" onclick="nav('exame/${admissionId}/lab')">Laboratorial</button>
         <button class="${categoria === 'imagem' ? 'active' : ''}" onclick="nav('exame/${admissionId}/imagem')">Imagem</button>
+        <button class="${categoria === 'cultura' ? 'active' : ''}" onclick="nav('exame/${admissionId}/cultura')">Culturas</button>
       </div>
       <label>Data</label>
       <input id="e-data" type="date" value="${hojeLocalISO()}">
-      ${categoria === 'imagem' ? camposImagem : camposLab}
+      ${categoria === 'imagem' ? camposImagem : categoria === 'cultura' ? camposCultura : camposLab}
       <label style="margin-top:14px">Fotos do laudo (opcional — pode tirar agora, antes de escrever qualquer coisa)</label>
       <input type="file" id="e-fotos" accept="image/*" multiple>
       <button class="btn btn-primary" onclick="salvarExame('${admissionId}','${categoria}')">Salvar</button>
@@ -1634,7 +1663,7 @@ async function salvarExame(admissionId, categoria) {
     resultadoResumo: document.getElementById('e-resumo').value.trim(),
     labsBasicos: {},
   };
-  if (categoria === 'imagem') {
+  if (categoria === 'imagem' || categoria === 'cultura') {
     exame.tipo = document.getElementById('e-tipo').value.trim();
   } else {
     for (const l of labsRascunho) exame.labsBasicos[l.key] = l.valor;
