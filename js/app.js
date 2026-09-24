@@ -897,22 +897,22 @@ async function toggleComorbidade(id) {
 }
 
 async function tabExames(admission) {
-  const exames = (await DB.where('exams', (e) => e.admissionId === admission.id))
-    .sort((a, b) => b.data - a.data);
+  const exames = await DB.where('exams', (e) => e.admissionId === admission.id);
   const todosAnexos = await DB.all('attachments');
   const contagemAnexos = {};
   for (const a of todosAnexos) contagemAnexos[a.examId] = (contagemAnexos[a.examId] || 0) + 1;
 
   // exames antigos (de antes desta separação existir) não têm `categoria` —
   // tratamos como laboratorial, que era o único tipo que existia até então
-  const imagem = exames.filter((e) => e.categoria === 'imagem');
-  const cultura = exames.filter((e) => e.categoria === 'cultura');
-  const lab = exames.filter((e) => e.categoria !== 'imagem' && e.categoria !== 'cultura')
-    .sort((a, b) => b.data - a.data);
+  const imagem = exames.filter((e) => e.categoria === 'imagem').sort((a, b) => b.data - a.data);
+  // Ordem crescente (mais antigo primeiro) pra tabela ler da esquerda pra
+  // direita como uma planilha de acompanhamento de verdade.
+  const lab = exames.filter((e) => e.categoria !== 'imagem').sort((a, b) => a.data - b.data);
+  const cultura = lab.filter((e) => e.categoria === 'cultura');
+  const labNumerico = lab.filter((e) => e.categoria !== 'cultura');
 
-  // Imagem/cultura têm cara de card (tipo, data, laudo) — uma foto de
-  // exame ou o resultado de uma cultura são coisas discretas, cada uma
-  // merece sua própria caixa.
+  // Imagem tem cara de card (tipo, data, laudo) — uma foto de exame é algo
+  // discreto, merece sua própria caixa.
   function cartao(e) {
     const titulo = e.tipo ? esc(e.tipo) : fmtData(e.data);
     return `
@@ -926,37 +926,55 @@ async function tabExames(admission) {
       </div>
     `;
   }
-
-  // Laboratoriais é o oposto: uma coluna vertical só, que cresce por dentro
-  // conforme os dias passam — cada exame novo é uma linha a mais na MESMA
-  // lista, não mais um card separado (mesmo padrão de card+list-item já
-  // usado em Planos/Pareceres).
-  function linhaLab(e) {
-    const linhaLabs = LAB_FIELDS.filter((k) => e.labsBasicos && e.labsBasicos[k] != null)
-      .map((k) => `${LAB_LABEL[k]} ${e.labsBasicos[k]}`)
-      .join(' · ');
+  // Cultura entra na parte laboratorial, mas não cabe numa célula numérica
+  // — vira uma linha de lista simples, logo abaixo da planilha.
+  function linhaCultura(e) {
     return `
       <div class="list-item tappable" onclick="nav('exame-ver/${e.id}')">
         <div class="row">
-          <strong>Exame laboratorial — ${fmtData(e.data)}</strong>
+          <strong>${e.tipo ? esc(e.tipo) : fmtData(e.data)}</strong>
           ${contagemAnexos[e.id] ? `<span class="pill" style="background:var(--accent-soft);color:var(--accent)">${icone('paperclip', 12)} ${contagemAnexos[e.id]}</span>` : ''}
         </div>
-        ${linhaLabs ? `<div style="font-size:16px;margin-top:4px">${esc(linhaLabs)}</div>` : ''}
-        ${(!linhaLabs || e.resultadoResumo) ? `<div class="sub" style="margin-top:2px">${renderTexto(e.resultadoResumo) || 'Sem resumo'}</div>` : ''}
+        <div class="sub">${fmtData(e.data)}</div>
+        <div class="sub" style="margin-top:2px">${renderTexto(e.resultadoResumo) || 'Aguardando resultado'}</div>
       </div>
     `;
   }
 
+  // Planilha: uma linha por exame que já apareceu alguma vez (só os que têm
+  // valor em pelo menos um dia — não os ~55 campos possíveis todos de uma
+  // vez), uma coluna por dia. Rolagem horizontal com a coluna do nome fixa,
+  // igual uma planilha de verdade rolando pros lados.
+  const linhasComValor = LAB_FIELDS.filter((k) => labNumerico.some((e) => e.labsBasicos && e.labsBasicos[k] != null));
+  const tabelaHtml = labNumerico.length ? `
+    <div style="overflow-x:auto">
+      <table class="tabela-labs">
+        <thead>
+          <tr>
+            <th></th>
+            ${labNumerico.map((e) => `<th class="tappable" onclick="nav('exame-ver/${e.id}')">${fmtData(e.data)}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${linhasComValor.map((k) => `
+            <tr>
+              <td>${LAB_LABEL[k]}</td>
+              ${labNumerico.map((e) => `<td>${e.labsBasicos && e.labsBasicos[k] != null ? e.labsBasicos[k] : '—'}</td>`).join('')}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  ` : '<div class="empty">Nenhum exame laboratorial registrado.</div>';
+
   return `
-    <div class="section-title">Exames de imagem</div>
-    ${imagem.map(cartao).join('') || '<div class="empty">Nenhum exame de imagem registrado.</div>'}
-
-    <div class="section-title">Culturas</div>
-    ${cultura.map(cartao).join('') || '<div class="empty">Nenhuma cultura registrada.</div>'}
-
     <div class="section-title">Exames laboratoriais</div>
     <button class="btn btn-secondary" onclick="nav('tendencia/${admission.id}')">Ver tendência</button>
-    ${lab.length ? `<div class="card">${lab.map(linhaLab).join('')}</div>` : '<div class="empty">Nenhum exame laboratorial registrado.</div>'}
+    ${tabelaHtml}
+    ${cultura.length ? `<div class="card" style="margin-top:10px">${cultura.map(linhaCultura).join('')}</div>` : ''}
+
+    <div class="section-title">Exames de imagem</div>
+    ${imagem.map(cartao).join('') || '<div class="empty">Nenhum exame de imagem registrado.</div>'}
   `;
 }
 

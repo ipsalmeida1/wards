@@ -204,6 +204,21 @@ mark {
 
 .chart-wrap { background: var(--surface); color: var(--ink); border: 1px solid var(--hairline); border-radius: var(--r-lg); padding: 10px; box-shadow: var(--shadow-card); }
 
+/* Planilha de exames laboratoriais (js/app.js, tabExames) — uma linha por
+   exame, uma coluna por dia. A 1ª coluna (nome do exame) fica sticky pra
+   servir de referência enquanto o resto rola pro lado, igual uma planilha
+   de verdade com muitas colunas de data. */
+.tabela-labs { border-collapse: collapse; width: 100%; }
+.tabela-labs th, .tabela-labs td {
+  padding: 8px 12px; border: 1px solid var(--hairline); font-size: 14px;
+  white-space: nowrap; text-align: center; font-variant-numeric: tabular-nums;
+}
+.tabela-labs th { font-weight: 600; background: var(--surface); }
+.tabela-labs td:first-child, .tabela-labs th:first-child {
+  position: sticky; left: 0; text-align: left; font-weight: 500;
+  background: var(--canvas); z-index: 1;
+}
+
 .hw-overlay {
   position: fixed; inset: 0; z-index: 50;
   background: var(--canvas);
