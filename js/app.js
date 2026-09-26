@@ -1206,7 +1206,7 @@ async function onAddParecer(admissionId) {
 }
 
 const PLANO_CATEGORIAS = [
-  { key: 'residente', label: 'Planos do residente', placeholder: 'Nova conduta/checklist' },
+  { key: 'residente', label: 'Impressões', placeholder: 'Nova impressão clínica' },
   { key: 'preceptor', label: 'Planos do preceptor', placeholder: 'Nova conduta do preceptor' },
 ];
 
@@ -1465,7 +1465,7 @@ function extrairLabsDoTexto(texto) {
   return achados;
 }
 async function mesclarLabsHoje(admissionId, achados) {
-  const exames = await DB.where('exams', (e) => e.admissionId === admissionId && e.categoria !== 'imagem');
+  const exames = await DB.where('exams', (e) => e.admissionId === admissionId && e.categoria !== 'imagem' && e.categoria !== 'cultura');
   const hojeStr = fmtData(Date.now());
   let hoje = exames.find((e) => fmtData(e.data) === hojeStr);
   if (!hoje) {
@@ -1473,6 +1473,96 @@ async function mesclarLabsHoje(admissionId, achados) {
   }
   hoje.labsBasicos = { ...(hoje.labsBasicos || {}), ...achados };
   await DB.put('exams', hoje);
+}
+
+// Link automático do Bloco de Notas com Pareceres/Planos do preceptor —
+// mesmo espírito mecânico do extrairLabsDoTexto (nada de IA, só palavra-
+// chave solta em qualquer lugar da frase, igual o usuário pediu). Cada
+// ocorrência da palavra vira uma frase (até o próximo ./!/?/quebra de
+// linha); dessa frase tenta tirar quem respondeu (padrão "Dr./Dra. Nome")
+// e a especialidade (lista de apelidos conhecidos), e o texto de verdade
+// é o que sobra depois da palavra-chave, sem os conectores comuns
+// ("dizendo", "disse", "pediu pra"...).
+const ESPECIALIDADE_TOKEN_MAP = {
+  cardiologia: 'Cardiologia', cardio: 'Cardiologia',
+  neurologia: 'Neurologia', neuro: 'Neurologia',
+  nefrologia: 'Nefrologia', nefro: 'Nefrologia',
+  urologia: 'Urologia', uro: 'Urologia',
+  cirurgia: 'Cirurgia', vascular: 'Cirurgia Vascular',
+  endocrinologia: 'Endocrinologia', endocrino: 'Endocrinologia',
+  infectologia: 'Infectologia', infecto: 'Infectologia',
+  pneumologia: 'Pneumologia', pneumo: 'Pneumologia',
+  gastroenterologia: 'Gastroenterologia', gastro: 'Gastroenterologia',
+  hematologia: 'Hematologia', hemato: 'Hematologia',
+  oncologia: 'Oncologia', onco: 'Oncologia',
+  psiquiatria: 'Psiquiatria',
+  dermatologia: 'Dermatologia', dermato: 'Dermatologia',
+  oftalmologia: 'Oftalmologia', oftalmo: 'Oftalmologia',
+  ortopedia: 'Ortopedia', orto: 'Ortopedia',
+  reumatologia: 'Reumatologia', reuma: 'Reumatologia',
+  uti: 'UTI',
+};
+const CONECTORES_LINK_NOTEPAD = /^[,:]?\s*(?:dizendo|disse|orientou|orientando|sugeriu|sugerindo|recomendou|recomendando|informou|informando|solicitou|solicitando|pediu(?:\s+(?:pra|para))?|pedindo(?:\s+(?:pra|para))?|que)?\s*[,:]?\s*/i;
+
+// "Dr." tem ponto, então sem isso o corte de frase (abaixo) ia parar bem no
+// meio de "Dr. Fulano" e perder o nome do médico. Protege a abreviação
+// (troca o ponto por um caractere que não conta como fim de frase) antes de
+// cortar, e devolve o ponto de verdade depois.
+function protegerAbreviacoes(texto) {
+  return texto.replace(/\b(Dr|Dra|Sr|Sra|Prof)\./gi, '$1\u0001');
+}
+function extrairFrasesComPalavra(texto, palavra) {
+  const protegido = protegerAbreviacoes(texto || '');
+  const re = new RegExp(`[^.!?\\n]*\\b${palavra}\\b[^.!?\\n]*[.!?]?`, 'gi');
+  return [...protegido.matchAll(re)].map((m) => m[0].replace(/\u0001/g, '.').trim()).filter(Boolean);
+}
+function extrairAutorMedico(frase) {
+  // Sem /i: o prefixo "dr(a)." é case-insensitive na mão ([Dd][Rr]...), mas
+  // o NOME em si precisa ser genuinamente maiúsculo — com /i no regex
+  // inteiro, "respondeu"/"um" também bateriam em [A-ZÀ-Ý] e entravam no
+  // nome por engano.
+  const m = frase.match(/[Dd][Rr]\.?[Aa]?\.?\s+([A-ZÀ-Ý][a-zà-ÿ]*(?:\s+[A-ZÀ-Ý][a-zà-ÿ]*){0,2})/);
+  return m ? m[1].trim() : '';
+}
+function extrairEspecialidade(frase) {
+  const alvo = normalizarLabApelido(frase);
+  for (const [chave, nome] of Object.entries(ESPECIALIDADE_TOKEN_MAP)) {
+    if (new RegExp(`\\b${chave}\\b`).test(alvo)) return nome;
+  }
+  return '';
+}
+function extrairTextoAposPalavra(frase, palavra) {
+  const idx = frase.toLowerCase().indexOf(palavra.toLowerCase());
+  if (idx === -1) return frase;
+  let resto = frase.slice(idx + palavra.length);
+  resto = resto.replace(CONECTORES_LINK_NOTEPAD, '');
+  resto = resto.replace(/[.!?]+$/, '').trim();
+  return resto;
+}
+
+async function detectarLinksNotepad(texto, admissionId) {
+  for (const frase of extrairFrasesComPalavra(texto, 'parecer')) {
+    const textoParecer = extrairTextoAposPalavra(frase, 'parecer');
+    if (!textoParecer) continue;
+    const existentes = await DB.where('opinions', (o) => o.admissionId === admissionId);
+    const jaExiste = existentes.some((o) => o.texto.trim().toLowerCase() === textoParecer.toLowerCase());
+    if (jaExiste) continue;
+    await addOpiniao(admissionId, {
+      especialidade: extrairEspecialidade(frase),
+      autor: extrairAutorMedico(frase),
+      texto: textoParecer,
+    });
+    Dialog.avisar('Parecer adicionado automaticamente a partir do Bloco de Notas.', { tipo: 'sucesso' });
+  }
+  for (const frase of extrairFrasesComPalavra(texto, 'preceptor')) {
+    const textoPreceptor = extrairTextoAposPalavra(frase, 'preceptor');
+    if (!textoPreceptor) continue;
+    const existentes = await DB.where('planItems', (p) => p.admissionId === admissionId && p.categoria === 'preceptor');
+    const jaExiste = existentes.some((p) => p.descricao.trim().toLowerCase() === textoPreceptor.toLowerCase());
+    if (jaExiste) continue;
+    await addPlano(admissionId, textoPreceptor, 'preceptor');
+    Dialog.avisar('Plano do preceptor adicionado automaticamente a partir do Bloco de Notas.', { tipo: 'sucesso' });
+  }
 }
 
 // Caixa "infinita": em vez de altura fixa com scroll interno, ela cresce pra
@@ -1503,6 +1593,7 @@ function onDigitarNotepad(campo, admissionId) {
 
     const achados = extrairLabsDoTexto(texto);
     if (Object.keys(achados).length) await mesclarLabsHoje(admissionId, achados);
+    await detectarLinksNotepad(texto, admissionId);
 
     const statusAtual = document.getElementById('notepad-status');
     if (statusAtual) statusAtual.textContent = `Salvo às ${fmtData(Date.now(), true).split(' ')[1]}`;
