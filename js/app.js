@@ -1749,7 +1749,7 @@ const LAB_FIELDS = [
   'p',
   // Hemograma
   'hb', 'ht', 'vcm', 'hcm', 'chcm', 'rdw', 'leuco',
-  'bast', 'segm', 'linf', 'mono', 'eosino', 'plaq',
+  'bast', 'segm', 'linf', 'la', 'mono', 'eosino', 'plaq',
   // Coagulação
   'inr', 'ttpa', 'fibrinogenio',
   // Renal / eletrólitos
@@ -1769,7 +1769,7 @@ const LAB_FIELDS = [
 ];
 const LAB_LABEL = {
   hb: 'Hb', ht: 'Ht', vcm: 'VCM', hcm: 'HCM', chcm: 'CHCM', rdw: 'RDW', plaq: 'Plaq', leuco: 'Leucócitos',
-  bast: 'Bastões', segm: 'Segmentados', linf: 'Linfócitos', mono: 'Monócitos', eosino: 'Eosinófilos',
+  bast: 'Bastões', segm: 'Segmentados', linf: 'Linfócitos', la: 'LA (Linfócitos Atípicos)', mono: 'Monócitos', eosino: 'Eosinófilos',
   inr: 'INR', ttpa: 'TTPA', fibrinogenio: 'Fibrinogênio',
   ureia: 'Ureia', creat: 'Creatinina', acidourico: 'Ácido Úrico', na: 'Na', k: 'K', cl: 'Cl',
   ca: 'Ca', ica: 'Ca iônico', mg: 'Mg', p: 'P', ra: 'RA (Reserva Alcalina)',
