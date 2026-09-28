@@ -211,6 +211,29 @@ function extrairIniciais(nomeCompleto) {
   return letras.length ? letras.join('.') + '.' : '';
 }
 
+// Sem botão "Salvar": nome e idade do paciente gravam sozinhos 600ms depois
+// de parar de digitar — mesmo esquema do resto da ficha. Grava em
+// "patients" (não em "admissions"), então vale pra todas as internações
+// desse paciente, não só pra esta. Iniciais são recalculadas do nome novo,
+// nunca digitadas à mão (ver extrairIniciais).
+let debounceSalvarPaciente = null;
+function salvarPacienteDebounced(patientId) {
+  const statusEl = document.getElementById('paciente-status');
+  if (statusEl) statusEl.textContent = 'Salvando…';
+  clearTimeout(debounceSalvarPaciente);
+  debounceSalvarPaciente = setTimeout(async () => {
+    const patient = await getPatient(patientId);
+    const nomeCompleto = document.getElementById('edit-nome-paciente').value.trim();
+    const idadeTexto = document.getElementById('edit-idade-paciente').value.trim();
+    patient.nomeCompleto = nomeCompleto;
+    patient.iniciais = extrairIniciais(nomeCompleto);
+    patient.idade = idadeTexto ? Number(idadeTexto) : null;
+    await DB.put('patients', patient);
+    const statusAtual = document.getElementById('paciente-status');
+    if (statusAtual) statusAtual.textContent = `Salvo às ${fmtData(Date.now(), true).split(' ')[1]}`;
+  }, 600);
+}
+
 async function criarPacienteEAdmissao(fields) {
   const patient = {
     id: newId(),
@@ -579,7 +602,7 @@ async function viewPatientDetail(admissionId, tab) {
 
   vitaisChartPontos = null;
   let body = '';
-  if (tab === 'hda') body = await tabHDA(admission);
+  if (tab === 'hda') body = await tabHDA(admission, patient);
   else if (tab === 'comorbidades') body = await tabComorbidades(patient);
   else if (tab === 'vitais') body = await tabVitais(admission);
   else if (tab === 'exames') body = await tabExames(admission);
@@ -746,7 +769,7 @@ function onDigitarHDA(campo, admissionId) {
   if (wrap) wrap.innerHTML = htmlLinhaDoTempoHDA(extrairResumoPorData(campo.value), admissionId);
 }
 
-async function tabHDA(admission) {
+async function tabHDA(admission, patient) {
   // Ordem de prioridade, não de criação: problema sem `ordem` (registro
   // antigo, ou recém-adicionado) cai pro fim da lista pela data de criação —
   // só ganha uma posição fixa quando alguém de fato move ele pra cima/baixo.
@@ -772,7 +795,13 @@ async function tabHDA(admission) {
 
   return `
     ${statusCard(admission)}
-    <label>Motivo da admissão</label>
+    <label>Nome completo</label>
+    <input id="edit-nome-paciente" type="text" value="${esc(patient?.nomeCompleto || '')}" oninput="salvarPacienteDebounced('${admission.patientId}')">
+    <label>Idade</label>
+    <input id="edit-idade-paciente" type="number" value="${patient?.idade ?? ''}" oninput="salvarPacienteDebounced('${admission.patientId}')">
+    <div id="paciente-status" class="sub" style="text-align:right;margin-top:4px">${patient?.nomeCompleto ? 'Salvo' : ''}</div>
+
+    <label style="margin-top:14px">Motivo da admissão</label>
     <input id="edit-motivo" type="text" value="${esc(admission.motivoAdmissao || '')}" oninput="salvarHDADebounced('${admission.id}')">
     <label>HDA</label>
     <div id="hda-linha-tempo-wrap">${htmlLinhaDoTempoHDA(resumoPorData, admission.id)}</div>
@@ -1465,10 +1494,15 @@ async function migrarEvolucaoAntiga(admission) {
 // LAB_LABEL (ver resolverLabPorApelido) — o resto dos ~50 exames é
 // encontrado só por prefixo, sem precisar de entrada aqui.
 const LAB_TOKEN_MAP = {
-  Hb: 'hb', Ht: 'ht', VCM: 'vcm', CHCM: 'chcm', Plaq: 'plaq',
-  Leucócitos: 'leuco', Leucocitos: 'leuco', Leuco: 'leuco',
-  PCR: 'pcr', Ureia: 'ureia', Uréia: 'ureia', Creat: 'creat', Cr: 'creat',
-  Na: 'na', K: 'k', Cl: 'cl',
+  Hb: 'hb', Hemo: 'hb', Hemoglobina: 'hb',
+  Ht: 'ht', Hematocrito: 'ht', Hematócrito: 'ht',
+  VCM: 'vcm', CHCM: 'chcm', Plaq: 'plaq', Plaquetas: 'plaq',
+  Leucócitos: 'leuco', Leucocitos: 'leuco', Leuco: 'leuco', Global: 'leuco',
+  PCR: 'pcr', Ureia: 'ureia', Uréia: 'ureia', Ur: 'ureia',
+  Creat: 'creat', Cr: 'creat', Creatinina: 'creat',
+  Na: 'na', Sodio: 'na', Sódio: 'na',
+  K: 'k', Potassio: 'k', Potássio: 'k',
+  Cl: 'cl', Cloro: 'cl',
   AST: 'tgo', ALT: 'tgp', Bicarbonato: 'hco3', Glicose: 'glicemia', iCa: 'ica',
 };
 function extrairLabsDoTexto(texto) {
@@ -1773,6 +1807,8 @@ const LAB_FIELDS = [
   'ureia', 'creat', 'acidourico', 'na', 'k', 'cl', 'ca', 'ica', 'mg', 'ra',
   // Hepatograma
   'tgo', 'tgp', 'fa', 'ggt', 'bt', 'bd', 'bi', 'alb', 'pt',
+  // Pancreático
+  'amilase', 'lipase',
   // Inflamatórios/infecciosos
   'pcr', 'vhs', 'pct',
   // Endócrino/metabólico
@@ -1791,6 +1827,7 @@ const LAB_LABEL = {
   ureia: 'Ureia', creat: 'Creatinina', acidourico: 'Ácido Úrico', na: 'Na', k: 'K', cl: 'Cl',
   ca: 'Ca', ica: 'Ca iônico', mg: 'Mg', p: 'P', ra: 'RA (Reserva Alcalina)',
   tgo: 'TGO/AST', tgp: 'TGP/ALT', fa: 'FA', ggt: 'GGT', bt: 'BT', bd: 'BD', bi: 'BI', alb: 'Albumina', pt: 'Proteínas totais',
+  amilase: 'Amilase', lipase: 'Lipase',
   pcr: 'PCR', vhs: 'VHS', pct: 'Procalcitonina',
   glicemia: 'Glicemia', hba1c: 'HbA1c', tsh: 'TSH', t4l: 'T4 livre',
   tropo: 'Troponina', ck: 'CK', ckmb: 'CKMB', bnp: 'BNP',
