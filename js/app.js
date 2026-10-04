@@ -1119,10 +1119,7 @@ async function viewExamDetail(examId) {
         <label style="margin-top:14px">Outros labs</label>
         <div class="card">
           ${labsHtml || '<div class="sub">Nenhum lab registrado ainda.</div>'}
-          <div class="grid2" style="margin-top:10px">
-            <input id="lab-edit-nome" type="text" placeholder="Ex.: Cr, K, Hb..." onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabExame('${examId}')}">
-            <input id="lab-edit-valor" type="text" inputmode="decimal" placeholder="Valor" onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabExame('${examId}')}">
-          </div>
+          <input id="lab-edit-entrada" type="text" style="margin-top:10px" placeholder="Ex.: Cr 1,4  K 4,1  Hb 11" autocapitalize="off" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabExame('${examId}')}">
           <button class="btn btn-secondary" style="margin-top:10px" onclick="onAdicionarLabExame('${examId}')">Adicionar</button>
         </div>
       ` : ''}
@@ -1163,25 +1160,23 @@ function salvarExameDebounced(examId) {
 // Labs individuais do exame já salvo gravam na hora (não têm rascunho —
 // reaproveita o mesmo resolverLabPorApelido do fluxo de criação).
 async function onAdicionarLabExame(examId) {
-  const nomeEl = document.getElementById('lab-edit-nome');
-  const valorEl = document.getElementById('lab-edit-valor');
-  const nome = nomeEl.value.trim();
-  const valorTexto = valorEl.value.trim();
-  if (!nome || !valorTexto) return;
-  const resolvido = resolverLabPorApelido(nome);
-  if (!resolvido) {
-    Dialog.avisar(`Lab "${nome}" não reconhecido — tente a sigla usual (Cr, K, Hb...) ou o nome completo.`, { tipo: 'erro' });
-    return;
+  const entradaEl = document.getElementById('lab-edit-entrada');
+  const texto = entradaEl.value.trim();
+  if (!texto) return;
+  const { achados, naoReconhecidos } = parsearLabsDigitados(texto);
+  if (achados.length) {
+    const exame = await DB.get('exams', examId);
+    exame.labsBasicos = { ...(exame.labsBasicos || {}) };
+    for (const a of achados) exame.labsBasicos[a.key] = a.valor;
+    await DB.put('exams', exame);
+    await viewExamDetail(examId);
   }
-  const valor = Number(valorTexto.replace(',', '.'));
-  if (Number.isNaN(valor)) {
-    Dialog.avisar('O valor precisa ser um número.', { tipo: 'erro' });
-    return;
+  if (naoReconhecidos.length) {
+    // Re-renderizou acima; devolve o que não foi entendido pra caixa.
+    const el = document.getElementById('lab-edit-entrada');
+    if (el) { el.value = texto; el.focus(); }
+    avisarLabsNaoReconhecidos(naoReconhecidos);
   }
-  const exame = await DB.get('exams', examId);
-  exame.labsBasicos = { ...(exame.labsBasicos || {}), [resolvido.key]: valor };
-  await DB.put('exams', exame);
-  viewExamDetail(examId);
 }
 async function onRemoverLabExame(examId, key) {
   const exame = await DB.get('exams', examId);
@@ -1941,6 +1936,37 @@ function resolverLabPorApelido(texto) {
   return null;
 }
 
+// Entrada de lab numa caixa só: "Cr 1,4", ou vários de uma vez — "Hb 11,2 Ht 33
+// Cr 1.4, K 4,1". Cada número "solto" fecha um lab; o texto desde o número
+// anterior é o nome (pode ter espaço: "ácido úrico 5"; "pCO2 40" e "T4 livre
+// 1,2" funcionam porque o número só conta se não estiver colado em letra).
+function parsearLabsDigitados(texto) {
+  // "Cr1.4" / "k4,1" (sigla colada no número): separa — mas só se o token
+  // inteiro NÃO for um nome de lab por si ("pCO2", "T4"), senão quebraria
+  // esses.
+  texto = texto.replace(/(?<![\w])([a-zA-ZÀ-ÿ]+)(\d+(?:[.,]\d+)?)(?![\w])/g, (tudo, letras, num) =>
+    (resolverLabPorApelido(tudo) || !resolverLabPorApelido(letras)) ? tudo : `${letras} ${num}`);
+  const achados = [];
+  const naoReconhecidos = [];
+  const reNumero = /(?<![\w.,])-?\d+(?:[.,]\d+)?(?![\w])/g;
+  let inicio = 0, m;
+  while ((m = reNumero.exec(texto)) !== null) {
+    const nome = texto.slice(inicio, m.index).replace(/[,;:=\s]+/g, ' ').trim();
+    inicio = m.index + m[0].length;
+    if (!nome) { naoReconhecidos.push(m[0]); continue; }
+    const resolvido = resolverLabPorApelido(nome);
+    if (!resolvido) { naoReconhecidos.push(nome); continue; }
+    achados.push({ key: resolvido.key, label: resolvido.label, valor: Number(m[0].replace(',', '.')) });
+  }
+  const resto = texto.slice(inicio).replace(/[,;:=\s]+/g, ' ').trim();
+  if (resto) naoReconhecidos.push(resto); // nome sem valor no fim
+  return { achados, naoReconhecidos };
+}
+function avisarLabsNaoReconhecidos(lista) {
+  if (!lista.length) return;
+  Dialog.avisar(`Não entendi: ${lista.map((n) => `"${n}"`).join(', ')}. Use sigla + valor, ex.: Cr 1,4 K 4,1.`, { tipo: 'erro' });
+}
+
 // Rascunho dos labs da ficha de "Novo exame" — começa em branco (nada de
 // grade fixa com os 12 campos sempre visíveis) e cresce numa coluna
 // vertical conforme cada um é adicionado. Vive só na memória até salvar,
@@ -1959,27 +1985,19 @@ function onRemoverLabRascunho(indice) {
   document.getElementById('labs-rascunho-lista').innerHTML = htmlListaLabsRascunho();
 }
 function onAdicionarLabRascunho() {
-  const nomeEl = document.getElementById('lab-nome');
-  const valorEl = document.getElementById('lab-valor');
-  const nome = nomeEl.value.trim();
-  const valorTexto = valorEl.value.trim();
-  if (!nome || !valorTexto) return;
-  const resolvido = resolverLabPorApelido(nome);
-  if (!resolvido) {
-    Dialog.avisar(`Lab "${nome}" não reconhecido — tente a sigla usual (Cr, K, Hb...) ou o nome completo.`, { tipo: 'erro' });
-    return;
+  const entradaEl = document.getElementById('lab-entrada');
+  const texto = entradaEl.value.trim();
+  if (!texto) return;
+  const { achados, naoReconhecidos } = parsearLabsDigitados(texto);
+  for (const a of achados) {
+    labsRascunho = labsRascunho.filter((l) => l.key !== a.key);
+    labsRascunho.push(a);
   }
-  const valor = Number(valorTexto.replace(',', '.'));
-  if (Number.isNaN(valor)) {
-    Dialog.avisar('O valor precisa ser um número.', { tipo: 'erro' });
-    return;
-  }
-  labsRascunho = labsRascunho.filter((l) => l.key !== resolvido.key);
-  labsRascunho.push({ key: resolvido.key, label: resolvido.label, valor });
-  nomeEl.value = '';
-  valorEl.value = '';
-  nomeEl.focus();
+  // Só limpa a caixa se tudo foi entendido — senão o texto fica pra corrigir.
+  if (!naoReconhecidos.length) entradaEl.value = '';
+  entradaEl.focus();
   document.getElementById('labs-rascunho-lista').innerHTML = htmlListaLabsRascunho();
+  avisarLabsNaoReconhecidos(naoReconhecidos);
 }
 
 function viewNewExam(admissionId, categoria = 'lab') {
@@ -1989,10 +2007,7 @@ function viewNewExam(admissionId, categoria = 'lab') {
     <div class="section-title">Outros labs</div>
     <div class="card">
       <div id="labs-rascunho-lista">${htmlListaLabsRascunho()}</div>
-      <div class="grid2" style="margin-top:10px">
-        <input id="lab-nome" type="text" placeholder="Ex.: Cr, K, Hb..." onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabRascunho()}">
-        <input id="lab-valor" type="text" inputmode="decimal" placeholder="Valor" onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabRascunho()}">
-      </div>
+      <input id="lab-entrada" type="text" style="margin-top:10px" placeholder="Ex.: Cr 1,4  K 4,1  Hb 11" autocapitalize="off" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabRascunho()}">
       <button class="btn btn-secondary" style="margin-top:10px" onclick="onAdicionarLabRascunho()">Adicionar</button>
     </div>
     <label style="margin-top:14px">Resumo / demais exames</label>
