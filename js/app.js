@@ -645,6 +645,10 @@ async function viewPatientDetail(admissionId, tab) {
       : '',
   });
 
+  // Planilha de labs: abre já rolada pro dia mais recente (última coluna) —
+  // com vários dias a coluna nova ficava fora da tela, parecendo que o lab
+  // adicionado "não apareceu".
+  document.querySelectorAll('.tabela-scroll').forEach((el) => { el.scrollLeft = el.scrollWidth; });
   if (tab === 'vitais' && vitaisChartPontos) desenharTendencia('vitais-canvas', vitaisChartPontos);
   if (tab === 'evolucoes') autoResizeTextarea(document.getElementById('edit-evolucao'));
 }
@@ -1030,21 +1034,32 @@ async function tabExames(admission) {
   // valor em pelo menos um dia — não os ~55 campos possíveis todos de uma
   // vez), uma coluna por dia. Rolagem horizontal com a coluna do nome fixa,
   // igual uma planilha de verdade rolando pros lados.
-  const linhasComValor = LAB_FIELDS.filter((k) => labNumerico.some((e) => e.labsBasicos && e.labsBasicos[k] != null));
+  // Exames do mesmo dia viram UMA coluna (valores do mais recente vencem) —
+  // senão cada vez que se adicionava labs no mesmo dia nascia uma coluna
+  // nova, com o resto em "—", e os valores ficavam espalhados.
+  const colunas = [];
+  for (const e of labNumerico) {
+    const dia = fmtData(e.data);
+    let col = colunas.find((c) => c.dia === dia);
+    if (!col) { col = { dia, labs: {}, id: e.id, data: e.data }; colunas.push(col); }
+    Object.assign(col.labs, e.labsBasicos || {});
+    col.id = e.id; // o cabeçalho/células abrem o exame mais recente do dia
+  }
+  const linhasComValor = LAB_FIELDS.filter((k) => colunas.some((c) => c.labs[k] != null));
   const tabelaHtml = labNumerico.length ? `
-    <div style="overflow-x:auto">
+    <div class="tabela-scroll" style="overflow-x:auto">
       <table class="tabela-labs">
         <thead>
           <tr>
             <th></th>
-            ${labNumerico.map((e) => `<th class="tappable" onclick="nav('exame-ver/${e.id}')">${fmtData(e.data)}</th>`).join('')}
+            ${colunas.map((c) => `<th class="tappable" onclick="nav('exame-ver/${c.id}')">${c.dia}</th>`).join('')}
           </tr>
         </thead>
         <tbody>
           ${linhasComValor.map((k) => `
             <tr${DIFERENCIAL_LEUCOCITOS.includes(k) ? ' class="sub-linha"' : ''}>
               <td>${LAB_LABEL[k]}${DIFERENCIAL_LEUCOCITOS.includes(k) ? ' (%)' : ''}</td>
-              ${labNumerico.map((e) => `<td class="tappable" onclick="nav('exame-ver/${e.id}')">${e.labsBasicos && e.labsBasicos[k] != null ? e.labsBasicos[k] : '—'}</td>`).join('')}
+              ${colunas.map((c) => `<td class="tappable" onclick="nav('exame-ver/${c.id}')">${c.labs[k] != null ? c.labs[k] : '—'}</td>`).join('')}
             </tr>
           `).join('')}
         </tbody>
@@ -1093,11 +1108,11 @@ async function viewExamDetail(examId) {
   // Cada lab já salvo vira uma linha editável (rótulo + caixa) que grava
   // sozinha — antes era só uma etiqueta, e corrigir um valor exigia apagar e
   // digitar de novo.
-  const labsHtml = LAB_FIELDS.filter((k) => labs[k] != null && k !== 'leuco' && !DIFERENCIAL_LEUCOCITOS.includes(k))
+  const labsHtml = LAB_FIELDS.filter((k) => labs[k] != null)
     .map((k) => `
-      <div class="row" style="margin-bottom:8px">
+      <div class="row" style="margin-bottom:8px${DIFERENCIAL_LEUCOCITOS.includes(k) ? ';padding-left:18px' : ''}">
         <label for="lab-v-${k}" style="margin:0;flex:1">${LAB_LABEL[k]}</label>
-        <input id="lab-v-${k}" data-lab="${k}" type="text" inputmode="decimal" value="${esc(String(labs[k]))}" style="width:110px" oninput="salvarLeucogramaDebounced('${examId}')">
+        <input id="lab-v-${k}" data-lab="${k}" type="text" inputmode="decimal" value="${esc(String(labs[k]))}" style="width:110px" oninput="salvarLabsExameDebounced('${examId}')">
         <button class="icon-btn" onclick="onRemoverLabExame('${examId}','${k}')" aria-label="Remover ${LAB_LABEL[k]}" title="Remover">${icone('trash', 16)}</button>
       </div>
     `).join('');
@@ -1115,11 +1130,10 @@ async function viewExamDetail(examId) {
         <input id="e-tipo-edit" type="text" value="${esc(exame.tipo || '')}" oninput="salvarExameDebounced('${examId}')">
       ` : ''}
       ${!temTipo ? `
-        ${htmlDiferencialLeucocitos('dif-edit', labs, `salvarLeucogramaDebounced('${examId}')`)}
-        <label style="margin-top:14px">Outros labs</label>
+        <label style="margin-top:14px">Laboratório</label>
         <div class="card">
-          ${labsHtml || '<div class="sub">Nenhum lab registrado ainda.</div>'}
-          <input id="lab-edit-entrada" type="text" style="margin-top:10px" placeholder="Ex.: Cr 1,4  K 4,1  Hb 11" autocapitalize="off" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabExame('${examId}')}">
+          ${labsHtml || '<div class="sub" style="margin-bottom:8px">Nenhum lab registrado ainda.</div>'}
+          <input id="lab-edit-entrada" type="text" style="margin-top:10px" placeholder="Ex.: Leuco 9800 Segm 65 Cr 1,4 K 4,1" autocapitalize="off" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabExame('${examId}')}">
           <button class="btn btn-secondary" style="margin-top:10px" onclick="onAdicionarLabExame('${examId}')">Adicionar</button>
         </div>
       ` : ''}
@@ -1185,22 +1199,19 @@ async function onRemoverLabExame(examId, key) {
   viewExamDetail(examId);
 }
 
-// Leucócitos, diferencial e demais labs do exame gravam sozinhos 600ms depois de parar de digitar
+// Os labs do exame gravam sozinhos 600ms depois de parar de digitar
 // (sem botão), sem re-renderizar a tela — senão o cursor sairia da caixa a
 // cada tecla. Campo apagado some do exame.
-let debounceSalvarLeucograma = null;
-function salvarLeucogramaDebounced(examId) {
+let debounceSalvarLabsExame = null;
+function salvarLabsExameDebounced(examId) {
   const statusEl = document.getElementById('exame-status');
   if (statusEl) statusEl.textContent = 'Salvando…';
-  clearTimeout(debounceSalvarLeucograma);
-  debounceSalvarLeucograma = setTimeout(async () => {
-    const achados = lerDiferencialLeucocitos('dif-edit');
+  clearTimeout(debounceSalvarLabsExame);
+  debounceSalvarLabsExame = setTimeout(async () => {
     const exame = await DB.get('exams', examId);
     exame.labsBasicos = exame.labsBasicos || {};
-    for (const k of ['leuco', ...DIFERENCIAL_LEUCOCITOS]) delete exame.labsBasicos[k];
-    Object.assign(exame.labsBasicos, achados);
-    // Demais labs já salvos: valor vazio apaga, número válido substitui,
-    // texto inválido mantém o que estava gravado.
+    // Valor vazio apaga, número válido substitui, texto inválido mantém o
+    // que estava gravado.
     document.querySelectorAll('input[data-lab]').forEach((el) => {
       const texto = el.value.trim();
       if (!texto) { delete exame.labsBasicos[el.dataset.lab]; return; }
@@ -1868,48 +1879,10 @@ const LAB_LABEL = {
   psat: 'PSA total', psal: 'PSA livre',
 };
 
-// Diferencial de leucócitos — os mesmos 6 campos sempre andam juntos (um
-// hemograma com diferencial vem com todos de uma vez), então ganham seção
-// própria com caixa dedicada pra cada um, em vez de precisar saber
-// digitar "Segm"/"LA" um por um no fluxo genérico de "Labs rápidos" (esse
-// continua existindo, pros outros ~50 exames que não formam um grupo fixo
-// como este).
+// Os 6 campos do diferencial de leucócitos — não têm mais seção própria
+// (tudo é "Laboratório", numa caixa só); a lista serve pra recuar essas
+// linhas sob Leucócitos na planilha e na edição.
 const DIFERENCIAL_LEUCOCITOS = ['segm', 'linf', 'la', 'bast', 'mono', 'eosino'];
-// Bloco único "Leucócitos": o total em cima e, logo abaixo (recuado, com
-// rótulo visível em cada caixa), o diferencial. Os três que mais se usam
-// (segmentados, linfócitos típicos e atípicos) vêm primeiro.
-function htmlDiferencialLeucocitos(idPrefix, valores = {}, onInput = '') {
-  const valor = (k) => (valores[k] != null ? esc(String(valores[k])) : '');
-  const oninput = onInput ? ` oninput="${onInput}"` : '';
-  return `
-    <label style="margin-top:14px">Leucócitos</label>
-    <input id="${idPrefix}-leuco" type="text" inputmode="decimal" placeholder="Total (/mm³)" value="${valor('leuco')}"${oninput}>
-    <div class="diferencial">
-      <div class="diferencial-titulo">Diferencial (%)</div>
-      <div class="grid3">
-        ${DIFERENCIAL_LEUCOCITOS.map((k) => `
-          <div>
-            <label class="diferencial-rotulo" for="${idPrefix}-${k}">${LAB_LABEL[k]}</label>
-            <input id="${idPrefix}-${k}" type="text" inputmode="decimal" value="${valor(k)}"${oninput}>
-          </div>`).join('')}
-      </div>
-    </div>
-  `;
-}
-// Lê o total de leucócitos + as 6 caixas do diferencial (por id-prefix) e
-// devolve só as preenchidas e numéricas — usado tanto ao criar quanto ao
-// editar um exame.
-function lerDiferencialLeucocitos(idPrefix) {
-  const achados = {};
-  for (const k of ['leuco', ...DIFERENCIAL_LEUCOCITOS]) {
-    const el = document.getElementById(`${idPrefix}-${k}`);
-    const texto = el ? el.value.trim() : '';
-    if (!texto) continue;
-    const valor = Number(texto.replace(',', '.'));
-    if (!Number.isNaN(valor)) achados[k] = valor;
-  }
-  return achados;
-}
 
 // Busca inteligente do nome do lab: "Cr" ou "creat" acham Creatinina, "K"
 // acha Potássio etc. Reaproveita o MESMO dicionário de apelidos que já
@@ -1919,11 +1892,19 @@ function lerDiferencialLeucocitos(idPrefix) {
 function normalizarLabApelido(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 }
+// Siglas do diferencial: só valem na caixa de labs (não entram no
+// LAB_TOKEN_MAP, que também alimenta a extração do Bloco de Notas — "Seg 12"
+// numa nota não deve virar lab). "LA" precisa estar aqui: por prefixo do
+// nome ele cairia em Lactato.
+const LAB_APELIDOS_DIFERENCIAL = {
+  LA: 'la', Atipicos: 'la', Atipico: 'la', Atípicos: 'la', Atípico: 'la',
+  Seg: 'segm', Segm: 'segm', Segs: 'segm', Linf: 'linf', Bast: 'bast', Bastao: 'bast', Mono: 'mono', Eos: 'eosino', Eosino: 'eosino',
+};
 function resolverLabPorApelido(texto) {
   const alvo = normalizarLabApelido(texto);
   if (!alvo) return null;
   // 1) apelido clínico exato (Cr, K, AST, Leuco, Uréia, Bicarbonato...).
-  for (const [apelido, key] of Object.entries(LAB_TOKEN_MAP)) {
+  for (const [apelido, key] of Object.entries({ ...LAB_TOKEN_MAP, ...LAB_APELIDOS_DIFERENCIAL })) {
     if (normalizarLabApelido(apelido) === alvo) return { key, label: LAB_LABEL[key] };
   }
   // 2) o NOME DO EXAME começa com o que foi digitado — nunca o contrário.
@@ -2003,11 +1984,10 @@ function onAdicionarLabRascunho() {
 function viewNewExam(admissionId, categoria = 'lab') {
   labsRascunho = [];
   const camposLab = `
-    ${htmlDiferencialLeucocitos('dif')}
-    <div class="section-title">Outros labs</div>
+    <div class="section-title">Laboratório</div>
     <div class="card">
       <div id="labs-rascunho-lista">${htmlListaLabsRascunho()}</div>
-      <input id="lab-entrada" type="text" style="margin-top:10px" placeholder="Ex.: Cr 1,4  K 4,1  Hb 11" autocapitalize="off" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabRascunho()}">
+      <input id="lab-entrada" type="text" style="margin-top:10px" placeholder="Ex.: Leuco 9800 Segm 65 Cr 1,4 K 4,1" autocapitalize="off" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();onAdicionarLabRascunho()}">
       <button class="btn btn-secondary" style="margin-top:10px" onclick="onAdicionarLabRascunho()">Adicionar</button>
     </div>
     <label style="margin-top:14px">Resumo / demais exames</label>
@@ -2053,9 +2033,25 @@ async function salvarExame(admissionId, categoria) {
     exame.tipo = document.getElementById('e-tipo').value.trim();
   } else {
     for (const l of labsRascunho) exame.labsBasicos[l.key] = l.valor;
-    Object.assign(exame.labsBasicos, lerDiferencialLeucocitos('dif'));
   }
-  await DB.put('exams', exame);
+  // Laboratorial do mesmo dia: junta no exame que já existe em vez de criar
+  // outro (a planilha tem uma coluna por dia) — valores novos vencem, o
+  // resumo é acrescentado.
+  if (categoria === 'lab') {
+    const dia = fmtData(exame.data);
+    const doDia = (await DB.where('exams', (e) => e.admissionId === admissionId && e.categoria !== 'imagem' && e.categoria !== 'cultura' && fmtData(e.data) === dia))
+      .sort((a, b) => a.data - b.data);
+    const existente = doDia[doDia.length - 1];
+    if (existente) {
+      existente.labsBasicos = { ...(existente.labsBasicos || {}), ...exame.labsBasicos };
+      if (exame.resultadoResumo) {
+        existente.resultadoResumo = `${existente.resultadoResumo ? existente.resultadoResumo + '\n\n' : ''}${exame.resultadoResumo}`;
+      }
+      exame.id = existente.id;
+      await DB.put('exams', existente);
+    }
+  }
+  if (categoria !== 'lab' || !(await DB.get('exams', exame.id))) await DB.put('exams', exame);
   for (const file of document.getElementById('e-fotos').files) {
     const id = newId();
     const storagePath = await subirAnexo(id, file);

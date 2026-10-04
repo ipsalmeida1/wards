@@ -6,21 +6,21 @@
 // novo a cada versão, mesmo se algum cache HTTP intermediário guardar a URL
 // sem query — então o nome do arquivo aqui precisa bater com o que o HTML
 // realmente pede, senão o precache instala uma URL que ninguém vai pedir.
-const CACHE = 'wards-v91';
+const CACHE = 'wards-v92';
 const ARQUIVOS = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './css/app.css?v=91',
-  './js/supabaseClient.js?v=91',
-  './js/db.js?v=91',
-  './js/matching.js?v=91',
-  './js/archive.js?v=91',
-  './js/report.js?v=91',
-  './js/dialog.js?v=91',
-  './js/handwriting.js?v=91',
-  './js/scribble.js?v=91',
-  './js/app.js?v=91',
+  './css/app.css?v=92',
+  './js/supabaseClient.js?v=92',
+  './js/db.js?v=92',
+  './js/matching.js?v=92',
+  './js/archive.js?v=92',
+  './js/report.js?v=92',
+  './js/dialog.js?v=92',
+  './js/handwriting.js?v=92',
+  './js/scribble.js?v=92',
+  './js/app.js?v=92',
   './icons/icon.svg',
 ];
 
