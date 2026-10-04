@@ -1,55 +1,63 @@
-/* Paleta a partir do DESIGN.md gerado por `npx getdesign add wired`
-   (inspirado na revista WIRED): preto/branco estrito, uma serifa de
-   destaque (Playfair Display) só pro título de tela, cantos quadrados
-   (--r-full é a única exceção, reservada pra ícone circular e pra pill de
-   status/semântica), sem sombra — elevação vira hairline. Cor semântica
-   (danger/warn/highlight) fica de fora dessa troca: não é identidade
-   visual, é estado, e o DESIGN.md não tem opinião sobre isso.
+/* Visual a partir do shot do Dribbble "Google Podcasts Redesigned App Case
+   Study" (Kazi Mohammed Erfan): fundo creme, cards em blocos de cor pastel
+   (coral/amarelo/azul/menta) e cards pretos, títulos grandes em negrito,
+   cantos bem arredondados, abas em pílula, botão flutuante escuro. Troca
+   o passo "WIRED" (preto/branco/serifa) — como o app inteiro lê cor e raio
+   só por estes tokens, quase tudo muda aqui; o resto são os poucos
+   componentes que precisavam de regra própria (cards pastel, tiles do
+   Início, título grande).
 
-   --ink-mute usa o valor #757575 que o próprio DESIGN.md já nomeia como
-   `colors.body` — 4,61:1 contra o novo --canvas branco, verificado com o
-   mesmo script de contraste WCAG usado nesta sessão (não chutado). */
+   Contraste conferido com o cálculo WCAG de luminância relativa (não
+   chutado): ink/canvas 15,8:1, ink-mute/canvas 5,5:1 e /soft 5,1:1,
+   ink sobre coral 7,6:1 (o par mais apertado), texto secundário sobre
+   coral 4,75:1, danger/canvas 5,7:1, warn/warn-soft 5,4:1. */
 
 :root {
-  --canvas: #ffffff;
-  --on-canvas: #000000;
-  --on-canvas-mute: #757575;
-  --surface: #ffffff;
-  --canvas-soft: #f5f5f5;
-  --ink: #000000;
-  --ink-mute: #757575;
-  --ink-faint: #bdbdbd;
-  --hairline: #e0e0e0;
-  --accent: #000000;
-  --accent-deep: #1a1a1a;
-  --on-accent: #ffffff;
-  --accent-soft: #f5f5f5;
-  --accent-line: #757575;
+  --canvas: #f6ecc9;
+  --on-canvas: #14120b;
+  --on-canvas-mute: #655d45;
+  --surface: #fdf8e8;
+  --canvas-soft: #efe2b5;
+  --ink: #14120b;
+  --ink-mute: #655d45;
+  --ink-faint: #bdb48f;
+  --hairline: #e2d4a0;
+  --accent: #14120b;
+  --accent-deep: #2b271a;
+  --on-accent: #fdf8e8;
+  --accent-soft: #efe2b5;
+  --accent-line: #655d45;
   --link: #057dbc;
-  /* Cor semântica — mantida do sistema anterior, só reverificada contra o
-     novo --surface branco (ficou com MAIS contraste, não menos). */
+  /* Blocos de cor dos cards (lista de pacientes, Pendências, tiles do
+     Início). Texto em cima é sempre --on-pastel (preto) e o secundário
+     --on-pastel-mute — nunca o cinza-creme normal, que perde contraste
+     sobre cor saturada. */
+  --pastel-coral: #f08a5d;
+  --pastel-amarela: #f7c948;
+  --pastel-azul: #a7c1f0;
+  --pastel-menta: #a5dcc4;
+  --on-pastel: #14120b;
+  --on-pastel-mute: #332f1e;
+  /* Cor semântica — estado, não identidade visual; só reverificada contra
+     o creme (danger 5,7:1, warn sobre warn-soft 5,4:1). */
   --warn: #824611;
-  --warn-soft: #f6ecd9;
+  --warn-soft: #f3d9a6;
   --danger: #a3352b;
-  --highlight: #f5df8e;
+  --highlight: #f7d65a;
   --on-highlight: #3d3210;
-  /* Cantos arredondados, a pedido — volta a usar a escala em vez de zerar
-     os quatro tokens (era assim antes do passo "WIRED" desta sessão). Como
-     todo o app usa --r-xs/sm/md/lg (nunca um valor solto), essa troca
-     sozinha já arredonda botão/card/input/tab/diálogo sem tocar nas ~30
-     regras que os referenciam. */
-  --r-xs: 6px;
-  --r-sm: 8px;
-  --r-md: 10px;
-  --r-lg: 14px;
+  /* Escala de cantos: todo o app usa --r-xs/sm/md/lg (nunca um valor
+     solto), então trocar aqui arredonda botão/card/input/aba/diálogo sem
+     tocar nas ~30 regras que os referenciam. */
+  --r-xs: 8px;
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 22px;
   --r-full: 9999px;
-  /* Sem sombra — o WIRED usa hairline/borda como única pista de elevação.
-     Mesma lógica de token único: zerar aqui vale pra todo mundo que usa
-     var(--shadow-card)/var(--shadow-float). As duas superfícies que
-     flutuam de verdade (diálogo, caixa de zoom) ganham borda grossa preta
-     à parte, mais abaixo. */
+  /* Cards ficam chapados (a cor já separa); só o que flutua de verdade —
+     botão "+ Novo paciente", diálogo, gaveta, caixa de zoom — ganha sombra
+     suave. */
   --shadow-card: none;
-  --shadow-float: none;
+  --shadow-float: 0 10px 28px rgba(20, 18, 11, 0.18);
   /* Curvas do Emil Kowalski (emil-design-eng) — mais "vivas" que o
      ease-out padrão do CSS, que é fraco demais pra sentir intencional. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -75,13 +83,16 @@ header.topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
   background: var(--canvas);
-  border-bottom: 1px solid var(--hairline);
 }
 header.topbar h1 {
-  /* Único lugar que vira serifa — título de tela é o "display" real do
-     app; texto corrido (textarea, lista) continua em Inter, ver DESIGN.md. */
-  font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
-  font-size: 22px; margin: 0; font-weight: 500; letter-spacing: -0.2px; line-height: 1.3;
+  font-size: 18px; margin: 0; font-weight: 800; letter-spacing: -0.3px; line-height: 1.3;
+}
+/* Título grande das telas "de entrada" (Início, Pacientes do dia,
+   Pendências, Arquivo, Relatório) — o "My Podcasts" do shot de referência.
+   Nelas a barra de cima fica só com voltar/ações. */
+.titulo-grande {
+  font-size: 34px; font-weight: 800; letter-spacing: -1px; line-height: 1.05;
+  margin: 2px 0 16px;
 }
 .icon-btn {
   background: none; border: none; font-size: 20px; color: var(--on-canvas); padding: 4px 8px;
@@ -91,18 +102,42 @@ header.topbar .back { font-size: 15px; color: var(--on-canvas-mute); background:
 main { flex: 1; padding: 12px 16px 100px; overflow-y: auto; }
 
 .searchbar {
-  width: 100%; padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--hairline);
-  background: var(--surface); color: var(--ink); font-size: 15px; margin-bottom: 12px;
+  width: 100%; padding: 12px 18px; border-radius: var(--r-full); border: none;
+  background: var(--surface); color: var(--ink); font-size: 15px; margin-bottom: 14px;
 }
 
 .card {
   background: var(--surface); color: var(--ink); border: 1px solid var(--hairline); border-radius: var(--r-lg);
-  padding: 12px 14px; margin-bottom: 10px; box-shadow: var(--shadow-card);
+  padding: 14px 16px; margin-bottom: 10px; box-shadow: var(--shadow-card);
 }
+/* Card em bloco de cor (shot de referência: "Amazing Animal Stories" etc.).
+   Cor vem de uma classe cor-* — a lista de pacientes e as Pendências
+   alternam entre elas. */
+.card-pastel { border-color: transparent; color: var(--on-pastel); }
+.card-pastel .sub { color: var(--on-pastel-mute); }
+.card-pastel .list-item { border-bottom-color: rgba(20, 18, 11, 0.14); }
+.cor-amarela { background: var(--pastel-amarela); }
+.cor-coral { background: var(--pastel-coral); }
+.cor-azul { background: var(--pastel-azul); }
+.cor-menta { background: var(--pastel-menta); }
+.cor-preta { background: var(--ink); color: var(--surface); }
 .tappable { cursor: pointer; transition: transform 120ms var(--ease-out); }
 .tappable:active { transform: scale(0.98); }
 .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.card .leito { font-weight: 550; font-size: 16px; }
+.card .leito { font-weight: 800; font-size: 20px; letter-spacing: -0.4px; }
+
+/* Tiles do Início: 2x2, cada um um bloco de cor com o ícone e (nos dois
+   primeiros) o número do dia. */
+.tile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tile {
+  border-radius: var(--r-lg); padding: 16px; min-height: 132px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  color: var(--on-pastel);
+}
+.tile.cor-preta { color: var(--surface); }
+.tile-topo { display: flex; justify-content: space-between; align-items: flex-start; }
+.tile-num { font-size: 40px; font-weight: 800; letter-spacing: -1.5px; line-height: 1; }
+.tile-label { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
 .sub { color: var(--ink-mute); font-size: 13.5px; margin-top: 2px; }
 .pill {
   font-size: 11px; padding: 3px 9px; border-radius: var(--r-full); font-weight: 500;
@@ -117,18 +152,23 @@ main { flex: 1; padding: 12px 16px 100px; overflow-y: auto; }
   position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 2px; width: 84px; margin-left: auto;
   background: var(--danger); color: #fff; font-size: 12px; font-weight: 600; line-height: 1.3;
+  /* Invisível até começar o arraste: com cantos de 22px e card colorido, o
+     vermelho aparecendo por trás nas quinas ficava feio. A classe
+     `revelado` é posta/tirada pelo JS do swipe (ligarSwipe). */
+  opacity: 0; transition: opacity 120ms var(--ease-out);
 }
+.swipe-item.revelado .swipe-action { opacity: 1; }
 
 .tabs { display: flex; overflow-x: auto; gap: 6px; margin-bottom: 14px; padding-bottom: 4px; }
 .tabs button {
-  /* r-md (0px agora), não r-full — navegação é estrutural, não estado
-     semântico, então segue o quadrado do resto do app (shape consistency). */
-  flex: none; padding: 7px 14px; border-radius: var(--r-md); border: 1px solid var(--hairline);
-  background: var(--surface); color: var(--ink-mute); font-size: 13.5px; font-weight: 500; white-space: nowrap;
+  /* Chips em pílula, como os de filtro do shot de referência ("For you",
+     "News", "Business"): inativo num creme um tom mais escuro, ativo preto. */
+  flex: none; padding: 8px 16px; border-radius: var(--r-full); border: none;
+  background: var(--canvas-soft); color: var(--ink-mute); font-size: 13.5px; font-weight: 600; white-space: nowrap;
   transition: transform 120ms var(--ease-out);
 }
 .tabs button:active { transform: scale(0.97); }
-.tabs button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.tabs button.active { background: var(--accent); color: var(--on-accent); }
 .tabs.vertical { flex-direction: column; overflow-x: visible; }
 .tabs.vertical button { width: 100%; text-align: left; }
 
@@ -163,7 +203,7 @@ main { flex: 1; padding: 12px 16px 100px; overflow-y: auto; }
 
 label { display: block; font-size: 12.5px; color: var(--on-canvas-mute); margin: 10px 0 4px; }
 input[type=text], input[type=number], input[type=date], input[type=password],
-input[type=tel], textarea, select {
+input[type=email], input[type=tel], textarea, select {
   width: 100%; padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--hairline);
   background: var(--surface); color: var(--ink); font-size: 15px; font-family: inherit;
 }
@@ -189,20 +229,19 @@ input.linha-tempo-input:focus { border-bottom: 1px solid var(--ink); color: var(
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 
 .btn {
-  /* r-md (0px) — botão do WIRED é sempre retângulo reto, nunca pílula
-     (era --r-full antes; essa é a única regra que a troca de token
-     sozinha não resolvia, porque não usava r-xs/sm/md/lg). */
-  display: inline-block; padding: 12px 24px; border-radius: var(--r-md); border: none;
-  font-size: 16px; font-weight: 420; text-align: center; width: 100%; margin-top: 14px;
+  /* Botão em pílula (--r-full) — a regra de botão não usa r-xs/sm/md/lg,
+     então este valor é próprio. */
+  display: inline-block; padding: 13px 24px; border-radius: var(--r-full); border: none;
+  font-size: 16px; font-weight: 600; text-align: center; width: 100%; margin-top: 14px;
   transition: transform 140ms var(--ease-out);
 }
 .btn:active { transform: scale(0.97); }
 .btn-primary { background: var(--accent); color: var(--on-accent); }
 .btn-primary:active { background: var(--accent-deep); }
-/* Contorno, não preenchido — button-outline do DESIGN.md: fundo do canvas,
-   borda preta. Era preenchido com accent-soft antes (pedia borda pra não
-   ler como desabilitado); o preto puro já resolve o contraste sozinho. */
-.btn-secondary { background: var(--canvas); color: var(--ink); border: 1.5px solid var(--ink); }
+/* Contorno preto sobre o creme — mesmo papel de "secundário" de antes, só
+   que agora o fundo é transparente pra não aparecer como uma pílula clara
+   solta em cima de card colorido. */
+.btn-secondary { background: transparent; color: var(--ink); border: 1.5px solid var(--ink); }
 .btn-secondary:active { background: var(--canvas-soft); }
 .btn-ghost { background: none; color: var(--ink-mute); }
 .btn-perigo { background: var(--danger); color: var(--on-accent); }
@@ -284,10 +323,9 @@ mark {
 .hw-actions .btn { margin-top: 0; }
 
 .hw-zoom {
-  /* Sem sombra pra flutuar (ver --shadow-float: none) — borda grossa preta
-     no lugar (Nível 2 do DESIGN.md), senão a caixa arrastável fica sem
-     contorno nenhum por cima do papel. */
-  position: absolute; background: var(--surface); border: 2px solid var(--ink);
+  /* Sombra suave + borda fina: flutua sobre o papel sem pesar. */
+  position: absolute; background: var(--surface); border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-float);
   border-radius: var(--r-lg); overflow: hidden;
   display: flex; flex-direction: column; z-index: 10;
 }
@@ -311,11 +349,12 @@ mark {
   display: flex; align-items: center; justify-content: center; padding: 20px;
 }
 .dlg-card {
-  /* Sem sombra (ver --shadow-float acima) — borda grossa preta no lugar.
-     Entrada com @starting-style: nunca de scale(0) puro (emil-design-eng —
-     nada no mundo real aparece do nada), e transform-origin fica no centro
-     de propósito: diálogo não tem gatilho pra ancorar, aparece centralizado. */
-  background: var(--surface); color: var(--ink); border: 2px solid var(--ink);
+  /* Sombra suave + borda fina. Entrada com @starting-style: nunca de
+     scale(0) puro (emil-design-eng — nada no mundo real aparece do nada), e
+     transform-origin fica no centro de propósito: diálogo não tem gatilho
+     pra ancorar, aparece centralizado. */
+  background: var(--surface); color: var(--ink); border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-float);
   border-radius: var(--r-lg); padding: 20px; width: 100%; max-width: 380px;
   transform-origin: center;
   transition: transform 200ms var(--ease-out), opacity 200ms var(--ease-out);
@@ -378,5 +417,5 @@ mark {
 
 @media print {
   header.topbar, .fab, .tabs, .no-print { display: none !important; }
-  body, .card { background: #fff; color: #000; box-shadow: none; }
+  body, .card, .card-pastel { background: #fff; color: #000; box-shadow: none; }
 }

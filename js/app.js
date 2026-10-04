@@ -277,17 +277,24 @@ async function addPlano(admissionId, descricao, categoria = 'residente') {
 
 // ---------- shell ----------
 
-function shell({ title, back, right, body, fabHtml }) {
+// `grande`: telas "de entrada" (Início, Pacientes, Pendências, Arquivo,
+// Relatório) mostram o título como cabeçalho grande no corpo, no estilo do
+// shot de referência, e deixam a barra de cima só com voltar/ações.
+function shell({ title, back, right, body, fabHtml, grande }) {
   render(`
     <header class="topbar">
       ${back ? `<button class="back" onclick="nav('${back}')">${icone('chevron-left', 15)} Voltar</button>` : '<span></span>'}
-      <h1>${esc(title)}</h1>
+      <h1>${grande ? '' : esc(title)}</h1>
       <span>${right || ''}</span>
     </header>
-    <main>${body}</main>
+    <main>${grande ? `<h2 class="titulo-grande">${esc(title)}</h2>` : ''}${body}</main>
     ${fabHtml ? `<div class="fab">${fabHtml}</div>` : ''}
   `);
 }
+
+// Ciclo de cores dos cards em bloco (lista de pacientes, Pendências) — as
+// classes `cor-*` vivem em css/app.css.
+const CORES_PASTEL = ['amarela', 'coral', 'azul', 'menta'];
 
 // ---------- início ----------
 
@@ -309,34 +316,31 @@ async function viewHome() {
 
   const dataBruta = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
   const dataFormatada = dataBruta.charAt(0).toUpperCase() + dataBruta.slice(1);
-  const atalho = (rota, nome, label) => `
-    <div class="card tappable" onclick="nav('${rota}')">
-      <div class="row">
-        <span>${icone(nome)} ${label}</span>
-        ${icone('chevron-right', 16)}
+  // Bloco de cor com ícone no topo, número do dia (quando há) e rótulo
+  // embaixo. Os dois primeiros carregam os mesmos números que antes ficavam
+  // nos cartões de resumo do topo.
+  const tile = (rota, nome, label, cor, numero) => `
+    <div class="tile tappable cor-${cor}" onclick="nav('${rota}')">
+      <div class="tile-topo">
+        ${icone(nome, 24)}
+        ${numero === undefined ? '' : `<span class="tile-num">${numero}</span>`}
       </div>
+      <div class="tile-label">${label}</div>
     </div>
   `;
 
   shell({
     title: 'Wards',
+    grande: true,
     right: `<button class="icon-btn" onclick="onSair()" title="Sair" aria-label="Sair">${icone('log-out')}</button>`,
     body: `
-      <div class="sub" style="margin-bottom:14px">${esc(dataFormatada)}</div>
-      <div class="grid2" style="margin-bottom:14px">
-        <div class="card" style="margin-bottom:0;text-align:center">
-          <div style="font-size:28px;font-weight:600;line-height:1">${admissoes.length}</div>
-          <div class="sub">Paciente${admissoes.length === 1 ? '' : 's'} ativo${admissoes.length === 1 ? '' : 's'}</div>
-        </div>
-        <div class="card" style="margin-bottom:0;text-align:center">
-          <div style="font-size:28px;font-weight:600;line-height:1">${comPendencia}</div>
-          <div class="sub">Com pendência hoje</div>
-        </div>
+      <div class="sub" style="margin:-8px 0 16px">${esc(dataFormatada)}</div>
+      <div class="tile-grid">
+        ${tile('pacientes', 'bed', 'Pacientes do dia', 'amarela', admissoes.length)}
+        ${tile('pendencias', 'list-checks', 'Pendências', 'coral', comPendencia)}
+        ${tile('relatorio', 'chart-column', 'Relatório mensal', 'azul')}
+        ${tile('arquivo', 'archive', 'Arquivo', 'preta')}
       </div>
-      ${atalho('pacientes', 'bed', 'Pacientes do dia')}
-      ${atalho('pendencias', 'list-checks', 'Pendências')}
-      ${atalho('relatorio', 'chart-column', 'Relatório mensal')}
-      ${atalho('arquivo', 'archive', 'Arquivo')}
     `,
   });
 }
@@ -356,12 +360,12 @@ async function viewPatientList(busca = '') {
       || (a.motivoAdmissao || '').toLowerCase().includes(alvo);
   }).sort((a, b) => (a.leito || '').localeCompare(b.leito || ''));
 
-  const itens = filtradas.map((a) => {
+  const itens = filtradas.map((a, i) => {
     const p = patients[a.patientId] || {};
     return `
       <div class="swipe-item">
         <div class="swipe-action" onclick="onExcluirAdmissao('${a.id}')">${icone('trash', 20)}<br>Excluir</div>
-        <div class="card tappable swipe-content" onclick="onCliqueCardPaciente(this, '${a.id}')">
+        <div class="card card-pastel tappable swipe-content cor-${CORES_PASTEL[i % CORES_PASTEL.length]}" onclick="onCliqueCardPaciente(this, '${a.id}')">
           <div class="row">
             <div class="row" style="gap:8px;flex:none">
               <button class="icon-btn" style="width:auto;font-size:19px;padding:4px" onclick="event.stopPropagation(); onTogglePrescricaoCheck('${a.id}')" title="Prescrição feita hoje" aria-label="Prescrição feita hoje">${a.prescricaoCheckDia === hojeLocalISO() ? icone('square-check') : icone('square')}</button>
@@ -377,6 +381,7 @@ async function viewPatientList(busca = '') {
 
   shell({
     title: 'Pacientes do dia',
+    grande: true,
     back: '/',
     right: `<button class="icon-btn" onclick="nav('pendencias')" title="Pendências" aria-label="Pendências">${icone('list-checks')}</button><button class="icon-btn" onclick="nav('arquivo')" title="Arquivo" aria-label="Arquivo">${icone('archive')}</button><button class="icon-btn" onclick="nav('relatorio')" title="Relatório" aria-label="Relatório">${icone('chart-column')}</button>`,
     body: `
@@ -406,11 +411,22 @@ async function viewPatientList(busca = '') {
 const SWIPE_LARGURA_ACAO = 84;
 let swipeAberto = null; // elemento .swipe-content atualmente revelado, se algum
 
+// A faixa vermelha "Excluir" só fica visível (classe `revelado` no
+// .swipe-item) durante/depois do arraste — senão aparece nas quinas
+// arredondadas dos cards coloridos. Tira a classe depois da animação de
+// fechar, pra ela não sumir no meio do movimento.
+function esconderAcaoSwipe(el) {
+  const item = el.closest('.swipe-item');
+  if (item) setTimeout(() => { if (swipeAberto !== el) item.classList.remove('revelado'); }, 200);
+}
+
 function fecharSwipeAberto() {
   if (swipeAberto) {
-    swipeAberto.style.transition = 'transform 0.18s ease-out';
-    swipeAberto.style.transform = 'translateX(0)';
+    const el = swipeAberto;
+    el.style.transition = 'transform 0.18s ease-out';
+    el.style.transform = 'translateX(0)';
     swipeAberto = null;
+    esconderAcaoSwipe(el);
   }
 }
 
@@ -433,6 +449,8 @@ function ligarSwipe(el) {
       ehHorizontal = Math.abs(dx) > Math.abs(dy);
       if (!ehHorizontal) { arrastando = false; return; } // deixa o scroll vertical normal acontecer
       el.setPointerCapture(e.pointerId);
+      const item = el.closest('.swipe-item');
+      if (item) item.classList.add('revelado');
     }
     if (!ehHorizontal) return;
     e.preventDefault();
@@ -452,6 +470,7 @@ function ligarSwipe(el) {
     } else {
       el.style.transform = 'translateX(0)';
       if (swipeAberto === el) swipeAberto = null;
+      esconderAcaoSwipe(el);
     }
   }
   el.addEventListener('pointerup', soltar);
@@ -2037,19 +2056,19 @@ function desenharTendencia(canvasId, pontos) {
   const px = (x) => PAD + ((x - minX) / rangeX) * (W - PAD * 2);
   const py = (y) => H - PAD - ((y - minY) / rangeY) * (H - PAD * 2);
 
-  ctx.strokeStyle = '#e0e0e0';
+  ctx.strokeStyle = '#e2d4a0';
   ctx.beginPath(); ctx.moveTo(PAD, H - PAD); ctx.lineTo(W - PAD, H - PAD); ctx.stroke();
 
-  ctx.strokeStyle = '#000000';
+  ctx.strokeStyle = '#14120b';
   ctx.lineWidth = 2.5;
   ctx.beginPath();
   pontos.forEach((p, i) => (i === 0 ? ctx.moveTo(px(p.x), py(p.y)) : ctx.lineTo(px(p.x), py(p.y))));
   ctx.stroke();
 
-  ctx.fillStyle = '#000000';
+  ctx.fillStyle = '#14120b';
   pontos.forEach((p) => { ctx.beginPath(); ctx.arc(px(p.x), py(p.y), 4, 0, Math.PI * 2); ctx.fill(); });
 
-  ctx.fillStyle = '#757575';
+  ctx.fillStyle = '#655d45';
   ctx.font = '11px "Inter Variable", -apple-system, sans-serif';
   ctx.fillText(String(maxY), 4, py(maxY) + 4);
   ctx.fillText(String(minY), 4, py(minY) + 4);
@@ -2070,7 +2089,7 @@ async function viewReport(ano, mes) {
   const nomeMes = nomeMesBruto.charAt(0).toUpperCase() + nomeMesBruto.slice(1);
 
   shell({
-    title: 'Relatório mensal', back: '/',
+    title: 'Relatório mensal', back: '/', grande: true,
     body: `
       <div class="row" style="justify-content:center;gap:16px;margin-bottom:14px">
         <button class="icon-btn" onclick="viewReport(${mes === 0 ? ano - 1 : ano}, ${mes === 0 ? 11 : mes - 1})" title="Mês anterior" aria-label="Mês anterior">${icone('chevron-left')}</button>
@@ -2119,7 +2138,7 @@ async function viewArchiveList() {
   const patients = Object.fromEntries((await DB.all('patients')).map((p) => [p.id, p]));
 
   shell({
-    title: 'Arquivo', back: '/',
+    title: 'Arquivo', back: '/', grande: true,
     body: admissoes.map((a) => `
       <div class="card tappable" onclick="nav('paciente/${a.id}')">
         <div class="leito">${esc(a.leito)}</div>
@@ -2164,8 +2183,10 @@ async function viewPendencias() {
       </div>
     `).join('');
 
+    // __COR__ vira a cor do ciclo depois do filtro abaixo — o índice precisa
+    // contar só os pacientes que aparecem, senão a sequência pula cores.
     return `
-      <div class="card">
+      <div class="card card-pastel cor-__COR__">
         <div class="row tappable" onclick="nav('paciente/${a.id}')">
           <span class="leito">${esc(a.leito)}</span>
           <span class="sub">${esc(p.nomeCompleto || p.iniciais || '')}</span>
@@ -2173,10 +2194,10 @@ async function viewPendencias() {
         ${itemPrescricao}${itensPlano}
       </div>
     `;
-  }))).filter(Boolean);
+  }))).filter(Boolean).map((html, i) => html.replace('__COR__', CORES_PASTEL[i % CORES_PASTEL.length]));
 
   shell({
-    title: 'Pendências', back: '/',
+    title: 'Pendências', back: '/', grande: true,
     body: secoes.join('') || '<div class="empty">Tudo em dia — nenhuma pendência hoje.</div>',
   });
 }
