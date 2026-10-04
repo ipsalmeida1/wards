@@ -715,18 +715,116 @@ async function onTogglePrescricaoCheck(admissionId) {
   renderRoute();
 }
 
-// Resumo por data da HDA — mecânico, sem IA: acha marcas "dia DD/MM" no
-// texto (convenção de quem escreve a HDA cronologicamente, ex.: "dia
-// 25/08: dor no corpo e febre, dia 27/08 rash cutâneo") e usa o trecho
-// entre uma marca e a próxima como aquele dia. Corta na primeira frase
-// (até ./!/quebra de linha) só por estrutura — não julga o que é
-// "importante", só evita uma linha do resumo virar o parágrafo inteiro.
-// `inicioTexto`/`fimTexto` marcam onde a frase reconhecida (l.texto, ANTES
-// do replace de vírgula/ponto-e-vírgula final) começa e termina dentro do
-// texto ORIGINAL — é o que permite editar uma entrada da linha do tempo e
-// regravar só aquele pedacinho na HDA de verdade, sem arriscar apagar o que
-// vem depois (texto extra até a próxima marca "dia", que não aparece no
-// resumo mas continua existindo na HDA).
+// Linha do tempo da HDA — mecânico, sem IA: acha marcas "dia DD/MM" no texto
+// (convenção de quem escreve a HDA cronologicamente, ex.: "dia 25/08: dor no
+// corpo e febre, dia 27/08 rash cutâneo") e, no trecho entre uma marca e a
+// próxima, mostra SÓ os sintomas reconhecidos — nenhum outro texto da HDA.
+//
+// Reconhecimento por dicionário (SINTOMAS_HDA), então um sintoma que não
+// esteja na lista não aparece na linha do tempo (continua na HDA). Sintoma
+// NEGADO ("sem febre", "nega cefaleia", "afebril") não entra: não é sintoma
+// daquele dia. A linha do tempo é só leitura — é derivada da HDA; pra mudar
+// algo, edite o texto da HDA logo abaixo.
+const SINTOMAS_HDA = [
+  ['Febre', /\bfebre|\bfebril/],
+  ['Calafrios', /calafrio/],
+  ['Cefaleia', /cefaleia|dor de cabeca/],
+  ['Tontura', /tontura/],
+  ['Vertigem', /vertigem/],
+  ['Náuseas', /nausea/],
+  ['Vômitos', /vomito|emese/],
+  ['Diarreia', /diarreia/],
+  ['Constipação', /constipacao|obstipacao/],
+  ['Dor abdominal', /dor abdominal|dor (?:em|no) abdome|dor epigastrica|epigastralgia/],
+  ['Dor torácica', /dor toracica|dor no peito|precordialgia/],
+  ['Dor lombar', /dor lombar|lombalgia/],
+  ['Dor cervical', /dor cervical|cervicalgia/],
+  ['Mialgia', /mialgia|dor(?:es)? no corpo|dor muscular/],
+  ['Artralgia', /artralgia|dor articular|dor(?:es)? nas articulacoes/],
+  ['Rash', /\brash|exantema|lesoes? cutaneas?|erupcao|manchas? (?:pelo corpo|na pele|avermelhadas?)/],
+  ['Prurido', /prurido|coceira/],
+  ['Tosse', /\btosse/],
+  ['Dispneia', /dispneia|dispneico|falta de ar/],
+  ['Coriza', /coriza/],
+  ['Odinofagia', /odinofagia|dor de garganta|dor ao engolir/],
+  ['Disfagia', /disfagia|engasgo/],
+  ['Rigidez de nuca', /rigidez (?:de|na) nuca|rigidez nucal/],
+  ['Fotofobia', /fotofobia/],
+  ['Convulsão', /convuls|crises? epilep|crises? tonico/],
+  ['Rebaixamento do nível de consciência', /rebaixamento/],
+  ['Sonolência', /sonolencia|sonolento/],
+  ['Confusão mental', /confusao|desorientacao|desorientado/],
+  ['Agitação', /agitacao|agitado/],
+  ['Alteração de comportamento', /alteracao (?:do|de) comportamento|alteracao comportamental/],
+  ['Alucinações', /alucinac/],
+  ['Delirium', /delirium|delirio/],
+  ['Hemiparesia', /hemiparesia/],
+  ['Hemiplegia', /hemiplegia/],
+  ['Paraparesia', /paraparesia/],
+  ['Tetraparesia', /tetraparesia/],
+  ['Fraqueza', /fraqueza|perda de forca|diminuicao (?:da|de) forca|\bparesia/],
+  ['Parestesia', /parestesia|formigamento|dormencia|hipoestesia/],
+  ['Disartria', /disartria|fala arrastada/],
+  ['Afasia', /afasia/],
+  ['Diplopia', /diplopia|visao dupla/],
+  ['Turvação visual', /turvacao visual|visao turva|embacamento/],
+  ['Perda visual', /perda (?:da |de )?visao|amaurose|cegueira/],
+  ['Ptose', /\bptose/],
+  ['Paralisia facial', /paralisia facial|desvio de rima|assimetria facial/],
+  ['Síncope', /sincope|desmaio|perda de consciencia/],
+  ['Tremor', /tremor/],
+  ['Ataxia', /ataxia|incoordenacao/],
+  ['Alteração da marcha', /alteracao da marcha|dificuldade (?:para|de|pra) (?:andar|deambular)/],
+  ['Quedas', /\bcaiu|\bquedas?\b/],
+  ['Incontinência urinária', /incontinencia urinaria/],
+  ['Retenção urinária', /retencao urinaria/],
+  ['Disúria', /disuria/],
+  ['Hematúria', /hematuria/],
+  ['Edema', /\bedema/],
+  ['Palpitações', /palpitac/],
+  ['Hiporexia', /hiporexia|inapetencia|perda de apetite|falta de apetite/],
+  ['Perda de peso', /perda de peso|emagrecimento/],
+  ['Astenia', /astenia|fadiga|cansaco|prostracao/],
+  ['Sudorese', /sudorese/],
+  ['Icterícia', /ictericia/],
+  ['Melena', /melena/],
+  ['Hematêmese', /hematemese/],
+  ['Hematoquezia', /hematoquezia|sangramento retal/],
+  ['Insônia', /insonia/],
+  ['Mioclonias', /mioclonia/],
+];
+// Palavras que negam o que vem DEPOIS delas dentro da mesma oração.
+const NEGACAO_HDA = /\b(?:sem|nega|negou|negando|ausencia de|afebril|nao (?:ha|houve|refere|referiu|apresenta|apresentou|tem|teve|relata|relatou))\b/;
+const sintomaEhDor = (nome) => /^Dor |^Cefaleia|^Mialgia|^Artralgia|^Odinofagia/.test(nome);
+
+function normalizarTextoHDA(t) {
+  return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// Sintomas (sem negados, sem repetir, na ordem em que aparecem) de um trecho.
+function extrairSintomas(trecho) {
+  const encontrados = [];
+  const orações = normalizarTextoHDA(trecho).split(/[.;,\n]|\bmas\b|\bporem\b/);
+  for (const oracao of orações) {
+    const achadosNaOracao = [];
+    for (const [nome, re] of SINTOMAS_HDA) {
+      const m = re.exec(oracao);
+      if (!m) continue;
+      if (NEGACAO_HDA.test(oracao.slice(0, m.index))) continue;
+      achadosNaOracao.push([nome, m.index]);
+    }
+    // "dor" solta ("dor em MMII") só entra se nenhum sintoma de dor mais
+    // específico já foi reconhecido nessa oração.
+    const mDor = /\bdor(?:es)?\b/.exec(oracao);
+    if (mDor && !achadosNaOracao.some(([n]) => sintomaEhDor(n)) && !NEGACAO_HDA.test(oracao.slice(0, mDor.index))) {
+      achadosNaOracao.push(['Dor', mDor.index]);
+    }
+    achadosNaOracao.sort((a, b) => a[1] - b[1]);
+    for (const [nome] of achadosNaOracao) if (!encontrados.includes(nome)) encontrados.push(nome);
+  }
+  return encontrados;
+}
+
 function extrairResumoPorData(texto) {
   const reData = /dia\s+(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s*:?\s*/gi;
   const marcas = [...(texto || '').matchAll(reData)];
@@ -734,54 +832,20 @@ function extrairResumoPorData(texto) {
   return marcas.map((m, i) => {
     const inicioBloco = m.index + m[0].length;
     const fimBloco = i + 1 < marcas.length ? marcas[i + 1].index : texto.length;
-    const bloco = texto.slice(inicioBloco, fimBloco);
-    const espacoInicial = bloco.match(/^\s*/)[0].length;
-    const semEspaco = bloco.slice(espacoInicial);
-    const primeiraFrase = semEspaco.match(/^[^.!?\n]+[.!?]?/);
-    const trechoBruto = primeiraFrase ? primeiraFrase[0] : semEspaco;
-    const inicioTexto = inicioBloco + espacoInicial;
-    const fimTexto = inicioTexto + trechoBruto.length;
-    const texto2 = trechoBruto.trim().replace(/[,;]+$/, '').trim();
-    return { data: m[1], texto: texto2, inicioTexto, fimTexto };
-  }).filter((l) => l.texto);
+    return { data: m[1], sintomas: extrairSintomas(texto.slice(inicioBloco, fimBloco)) };
+  }).filter((l) => l.sintomas.length);
 }
 
-// Linha do tempo: leitura automática da história natural, organizada por
-// data a partir do texto da HDA (convenção "dia DD/MM: ..."). Fica sempre
-// visível, sem clique nenhum — some sozinha quando não há data reconhecida,
-// aparece sozinha assim que a primeira surge. De propósito sem card nem
-// título próprio ("Linha do tempo"): são só linhas discretas coladas na
-// label "HDA", não uma seção separada que precisa de nome.
-//
-// Cada linha é editável (o texto, não a data): um <input> que parece texto
-// solto até ganhar foco. Ao perder o foco, regrava só aquele trecho de volta
-// na HDA de verdade (ver onEditarLinhaDoTempo) e recalcula tudo a partir do
-// texto novo — por isso só confirma no blur/Enter, nunca a cada tecla (senão
-// o próprio re-render destruiria o cursor no meio da edição).
-function htmlLinhaDoTempoHDA(resumoPorData, admissionId) {
-  if (!resumoPorData.length) return '';
+// Fica sempre visível, sem clique nenhum — some sozinha quando não há data
+// com sintoma reconhecido. Sem card nem título: linhas discretas coladas na
+// label "HDA".
+function htmlLinhaDoTempoHDA(resumoPorData) {
   return resumoPorData.map((l) => `
     <div class="sub linha-tempo-linha">
       <strong>${esc(l.data)}:</strong>
-      <input type="text" class="linha-tempo-input" value="${esc(l.texto)}"
-        onblur="onEditarLinhaDoTempo(this,'${admissionId}',${l.inicioTexto},${l.fimTexto})"
-        onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
+      <span>${esc(l.sintomas.join(', '))}</span>
     </div>
   `).join('');
-}
-
-// Regrava só o trecho editado de volta na HDA (usando os offsets do texto
-// ORIGINAL que estava na tela quando a linha do tempo foi desenhada) e
-// recalcula a linha do tempo inteira a partir do resultado — os offsets das
-// outras linhas mudam se o tamanho do texto mudou, então nunca dá pra só
-// atualizar essa uma entrada isolada.
-async function onEditarLinhaDoTempo(inputEl, admissionId, inicioTexto, fimTexto) {
-  const campo = document.getElementById('edit-hda');
-  const hdaAtual = campo.value;
-  const novoHda = hdaAtual.slice(0, inicioTexto) + inputEl.value.trim() + hdaAtual.slice(fimTexto);
-  campo.value = novoHda;
-  onDigitarHDA(campo, admissionId);
-  salvarHDADebounced(admissionId);
 }
 
 // Atualiza a linha do tempo ao vivo, a cada tecla — sem re-renderizar a tela
@@ -789,7 +853,7 @@ async function onEditarLinhaDoTempo(inputEl, admissionId, inicioTexto, fimTexto)
 // salvarHDADebounced, chamado à parte no mesmo oninput.
 function onDigitarHDA(campo, admissionId) {
   const wrap = document.getElementById('hda-linha-tempo-wrap');
-  if (wrap) wrap.innerHTML = htmlLinhaDoTempoHDA(extrairResumoPorData(campo.value), admissionId);
+  if (wrap) wrap.innerHTML = htmlLinhaDoTempoHDA(extrairResumoPorData(campo.value));
 }
 
 async function tabHDA(admission, patient) {
@@ -827,8 +891,8 @@ async function tabHDA(admission, patient) {
     <label style="margin-top:14px">Motivo da admissão</label>
     <input id="edit-motivo" type="text" value="${esc(admission.motivoAdmissao || '')}" oninput="salvarHDADebounced('${admission.id}')">
     <label>HDA</label>
-    <div id="hda-linha-tempo-wrap">${htmlLinhaDoTempoHDA(resumoPorData, admission.id)}</div>
-    <textarea id="edit-hda" oninput="onDigitarHDA(this,'${admission.id}'); salvarHDADebounced('${admission.id}')" placeholder="Envolva um trecho com ==assim== pra destacar. Escrever cronologicamente? Use &quot;dia 25/08: ...&quot; pra ganhar uma linha do tempo automática aqui em cima." style="min-height:260px">${esc(admission.hda || '')}</textarea>
+    <div id="hda-linha-tempo-wrap">${htmlLinhaDoTempoHDA(resumoPorData)}</div>
+    <textarea id="edit-hda" oninput="onDigitarHDA(this,'${admission.id}'); salvarHDADebounced('${admission.id}')" placeholder="Envolva um trecho com ==assim== pra destacar. Escrever cronologicamente? Use &quot;dia 25/08: ...&quot; pra ganhar, aqui em cima, uma linha do tempo só com os sintomas." style="min-height:260px">${esc(admission.hda || '')}</textarea>
     <div id="hda-status" class="sub" style="text-align:right;margin-top:4px">${(admission.motivoAdmissao || admission.hda) ? 'Salvo' : ''}</div>
 
     <div class="row" style="margin:14px 0 6px">
