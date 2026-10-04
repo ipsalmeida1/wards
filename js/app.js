@@ -1044,7 +1044,7 @@ async function tabExames(admission) {
           ${linhasComValor.map((k) => `
             <tr${DIFERENCIAL_LEUCOCITOS.includes(k) ? ' class="sub-linha"' : ''}>
               <td>${LAB_LABEL[k]}${DIFERENCIAL_LEUCOCITOS.includes(k) ? ' (%)' : ''}</td>
-              ${labNumerico.map((e) => `<td>${e.labsBasicos && e.labsBasicos[k] != null ? e.labsBasicos[k] : '—'}</td>`).join('')}
+              ${labNumerico.map((e) => `<td class="tappable" onclick="nav('exame-ver/${e.id}')">${e.labsBasicos && e.labsBasicos[k] != null ? e.labsBasicos[k] : '—'}</td>`).join('')}
             </tr>
           `).join('')}
         </tbody>
@@ -1090,13 +1090,17 @@ async function viewExamDetail(examId) {
   // O diferencial tem seção própria mais abaixo (com caixa dedicada pra
   // cada um) — não repete aqui na lista genérica de pills, senão o mesmo
   // valor apareceria duas vezes na tela.
+  // Cada lab já salvo vira uma linha editável (rótulo + caixa) que grava
+  // sozinha — antes era só uma etiqueta, e corrigir um valor exigia apagar e
+  // digitar de novo.
   const labsHtml = LAB_FIELDS.filter((k) => labs[k] != null && k !== 'leuco' && !DIFERENCIAL_LEUCOCITOS.includes(k))
     .map((k) => `
-      <span class="pill" style="background:var(--accent-soft);color:var(--accent);display:inline-flex;align-items:center;gap:4px">
-        ${LAB_LABEL[k]}: ${labs[k]}
-        <button class="icon-btn" style="width:auto;padding:0;font-size:12px" onclick="onRemoverLabExame('${examId}','${k}')" aria-label="Remover ${LAB_LABEL[k]}" title="Remover">${icone('trash', 12)}</button>
-      </span>
-    `).join(' ');
+      <div class="row" style="margin-bottom:8px">
+        <label for="lab-v-${k}" style="margin:0;flex:1">${LAB_LABEL[k]}</label>
+        <input id="lab-v-${k}" data-lab="${k}" type="text" inputmode="decimal" value="${esc(String(labs[k]))}" style="width:110px" oninput="salvarLeucogramaDebounced('${examId}')">
+        <button class="icon-btn" onclick="onRemoverLabExame('${examId}','${k}')" aria-label="Remover ${LAB_LABEL[k]}" title="Remover">${icone('trash', 16)}</button>
+      </div>
+    `).join('');
   const temTipo = exame.categoria === 'imagem' || exame.categoria === 'cultura';
 
   shell({
@@ -1186,7 +1190,7 @@ async function onRemoverLabExame(examId, key) {
   viewExamDetail(examId);
 }
 
-// Leucócitos + diferencial gravam sozinhos 600ms depois de parar de digitar
+// Leucócitos, diferencial e demais labs do exame gravam sozinhos 600ms depois de parar de digitar
 // (sem botão), sem re-renderizar a tela — senão o cursor sairia da caixa a
 // cada tecla. Campo apagado some do exame.
 let debounceSalvarLeucograma = null;
@@ -1200,6 +1204,14 @@ function salvarLeucogramaDebounced(examId) {
     exame.labsBasicos = exame.labsBasicos || {};
     for (const k of ['leuco', ...DIFERENCIAL_LEUCOCITOS]) delete exame.labsBasicos[k];
     Object.assign(exame.labsBasicos, achados);
+    // Demais labs já salvos: valor vazio apaga, número válido substitui,
+    // texto inválido mantém o que estava gravado.
+    document.querySelectorAll('input[data-lab]').forEach((el) => {
+      const texto = el.value.trim();
+      if (!texto) { delete exame.labsBasicos[el.dataset.lab]; return; }
+      const valor = Number(texto.replace(',', '.'));
+      if (!Number.isNaN(valor)) exame.labsBasicos[el.dataset.lab] = valor;
+    });
     await DB.put('exams', exame);
     const statusAtual = document.getElementById('exame-status');
     if (statusAtual) statusAtual.textContent = `Salvo às ${fmtData(Date.now(), true).split(' ')[1]}`;
