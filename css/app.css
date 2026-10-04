@@ -419,3 +419,13 @@ mark {
   header.topbar, .fab, .tabs, .no-print { display: none !important; }
   body, .card, .card-pastel { background: #fff; color: #000; box-shadow: none; }
 }
+
+/* Diferencial de leucócitos — fica logo abaixo da caixa do total, recuado
+   com uma barra à esquerda pra ler como "filho" de Leucócitos. */
+.diferencial {
+  margin: 8px 0 0 8px; padding: 4px 0 4px 12px; border-left: 3px solid var(--pastel-amarela);
+}
+.diferencial-titulo { font-size: 12px; font-weight: 700; color: var(--ink-mute); margin-bottom: 2px; }
+.diferencial-rotulo { font-size: 11.5px; margin: 6px 0 3px; }
+/* Linhas do diferencial na planilha de exames: recuadas sob Leucócitos. */
+.tabela-labs tr.sub-linha td:first-child { padding-left: 24px; font-weight: 400; color: var(--ink-mute); }

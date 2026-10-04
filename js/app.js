@@ -1042,8 +1042,8 @@ async function tabExames(admission) {
         </thead>
         <tbody>
           ${linhasComValor.map((k) => `
-            <tr>
-              <td>${LAB_LABEL[k]}</td>
+            <tr${DIFERENCIAL_LEUCOCITOS.includes(k) ? ' class="sub-linha"' : ''}>
+              <td>${LAB_LABEL[k]}${DIFERENCIAL_LEUCOCITOS.includes(k) ? ' (%)' : ''}</td>
               ${labNumerico.map((e) => `<td>${e.labsBasicos && e.labsBasicos[k] != null ? e.labsBasicos[k] : '—'}</td>`).join('')}
             </tr>
           `).join('')}
@@ -1090,7 +1090,7 @@ async function viewExamDetail(examId) {
   // O diferencial tem seção própria mais abaixo (com caixa dedicada pra
   // cada um) — não repete aqui na lista genérica de pills, senão o mesmo
   // valor apareceria duas vezes na tela.
-  const labsHtml = LAB_FIELDS.filter((k) => labs[k] != null && !DIFERENCIAL_LEUCOCITOS.includes(k))
+  const labsHtml = LAB_FIELDS.filter((k) => labs[k] != null && k !== 'leuco' && !DIFERENCIAL_LEUCOCITOS.includes(k))
     .map((k) => `
       <span class="pill" style="background:var(--accent-soft);color:var(--accent);display:inline-flex;align-items:center;gap:4px">
         ${LAB_LABEL[k]}: ${labs[k]}
@@ -1111,7 +1111,8 @@ async function viewExamDetail(examId) {
         <input id="e-tipo-edit" type="text" value="${esc(exame.tipo || '')}" oninput="salvarExameDebounced('${examId}')">
       ` : ''}
       ${!temTipo ? `
-        <label>Labs</label>
+        ${htmlDiferencialLeucocitos('dif-edit', labs, `salvarLeucogramaDebounced('${examId}')`)}
+        <label style="margin-top:14px">Outros labs</label>
         <div class="card">
           ${labsHtml || '<div class="sub">Nenhum lab registrado ainda.</div>'}
           <div class="grid2" style="margin-top:10px">
@@ -1120,8 +1121,6 @@ async function viewExamDetail(examId) {
           </div>
           <button class="btn btn-secondary" style="margin-top:10px" onclick="onAdicionarLabExame('${examId}')">Adicionar</button>
         </div>
-        ${htmlDiferencialLeucocitos('dif-edit', labs)}
-        <button class="btn btn-secondary" style="margin-top:10px" onclick="onSalvarDiferencialExame('${examId}')">Salvar diferencial</button>
       ` : ''}
       <label style="margin-top:14px">${temTipo ? 'Resultado / laudo' : 'Resumo / demais exames'}</label>
       <textarea id="e-resumo-edit" oninput="salvarExameDebounced('${examId}')" placeholder="Envolva um trecho com ==assim== pra destacar">${esc(exame.resultadoResumo || '')}</textarea>
@@ -1187,16 +1186,24 @@ async function onRemoverLabExame(examId, key) {
   viewExamDetail(examId);
 }
 
-// As 6 caixas do diferencial gravam juntas, num só clique — diferente do
-// fluxo genérico (um lab de cada vez), porque aqui já são campos fixos e
-// nomeados, não precisa confirmar nome por nome.
-async function onSalvarDiferencialExame(examId) {
-  const achados = lerDiferencialLeucocitos('dif-edit');
-  const exame = await DB.get('exams', examId);
-  for (const k of DIFERENCIAL_LEUCOCITOS) delete exame.labsBasicos[k];
-  Object.assign(exame.labsBasicos, achados);
-  await DB.put('exams', exame);
-  viewExamDetail(examId);
+// Leucócitos + diferencial gravam sozinhos 600ms depois de parar de digitar
+// (sem botão), sem re-renderizar a tela — senão o cursor sairia da caixa a
+// cada tecla. Campo apagado some do exame.
+let debounceSalvarLeucograma = null;
+function salvarLeucogramaDebounced(examId) {
+  const statusEl = document.getElementById('exame-status');
+  if (statusEl) statusEl.textContent = 'Salvando…';
+  clearTimeout(debounceSalvarLeucograma);
+  debounceSalvarLeucograma = setTimeout(async () => {
+    const achados = lerDiferencialLeucocitos('dif-edit');
+    const exame = await DB.get('exams', examId);
+    exame.labsBasicos = exame.labsBasicos || {};
+    for (const k of ['leuco', ...DIFERENCIAL_LEUCOCITOS]) delete exame.labsBasicos[k];
+    Object.assign(exame.labsBasicos, achados);
+    await DB.put('exams', exame);
+    const statusAtual = document.getElementById('exame-status');
+    if (statusAtual) statusAtual.textContent = `Salvo às ${fmtData(Date.now(), true).split(' ')[1]}`;
+  }, 600);
 }
 
 // "Excluir" aqui é de vez — some o exame e as fotos ligadas a ele, por
@@ -1819,7 +1826,7 @@ const LAB_FIELDS = [
   'p',
   // Hemograma
   'hb', 'ht', 'vcm', 'hcm', 'chcm', 'rdw', 'leuco',
-  'bast', 'segm', 'linf', 'la', 'mono', 'eosino', 'plaq',
+  'segm', 'linf', 'la', 'bast', 'mono', 'eosino', 'plaq',
   // Coagulação
   'inr', 'ttpa', 'fibrinogenio',
   // Renal / eletrólitos
@@ -1841,7 +1848,7 @@ const LAB_FIELDS = [
 ];
 const LAB_LABEL = {
   hb: 'Hb', ht: 'Ht', vcm: 'VCM', hcm: 'HCM', chcm: 'CHCM', rdw: 'RDW', plaq: 'Plaq', leuco: 'Leucócitos',
-  bast: 'Bastões', segm: 'Segmentados', linf: 'Linfócitos', la: 'LA (Linfócitos Atípicos)', mono: 'Monócitos', eosino: 'Eosinófilos',
+  bast: 'Bastões', segm: 'Segmentados', linf: 'Linfócitos típicos', la: 'Linfócitos atípicos', mono: 'Monócitos', eosino: 'Eosinófilos',
   inr: 'INR', ttpa: 'TTPA', fibrinogenio: 'Fibrinogênio',
   ureia: 'Ureia', creat: 'Creatinina', acidourico: 'Ácido Úrico', na: 'Na', k: 'K', cl: 'Cl',
   ca: 'Ca', ica: 'Ca iônico', mg: 'Mg', p: 'P', ra: 'RA (Reserva Alcalina)',
@@ -1860,20 +1867,34 @@ const LAB_LABEL = {
 // digitar "Segm"/"LA" um por um no fluxo genérico de "Labs rápidos" (esse
 // continua existindo, pros outros ~50 exames que não formam um grupo fixo
 // como este).
-const DIFERENCIAL_LEUCOCITOS = ['bast', 'segm', 'linf', 'la', 'mono', 'eosino'];
-function htmlDiferencialLeucocitos(idPrefix, valores = {}) {
+const DIFERENCIAL_LEUCOCITOS = ['segm', 'linf', 'la', 'bast', 'mono', 'eosino'];
+// Bloco único "Leucócitos": o total em cima e, logo abaixo (recuado, com
+// rótulo visível em cada caixa), o diferencial. Os três que mais se usam
+// (segmentados, linfócitos típicos e atípicos) vêm primeiro.
+function htmlDiferencialLeucocitos(idPrefix, valores = {}, onInput = '') {
+  const valor = (k) => (valores[k] != null ? esc(String(valores[k])) : '');
+  const oninput = onInput ? ` oninput="${onInput}"` : '';
   return `
-    <label style="margin-top:14px">Diferencial de leucócitos (%)</label>
-    <div class="grid3">
-      ${DIFERENCIAL_LEUCOCITOS.map((k) => `<input id="${idPrefix}-${k}" type="text" inputmode="decimal" placeholder="${LAB_LABEL[k]}" value="${valores[k] != null ? esc(String(valores[k])) : ''}">`).join('')}
+    <label style="margin-top:14px">Leucócitos</label>
+    <input id="${idPrefix}-leuco" type="text" inputmode="decimal" placeholder="Total (/mm³)" value="${valor('leuco')}"${oninput}>
+    <div class="diferencial">
+      <div class="diferencial-titulo">Diferencial (%)</div>
+      <div class="grid3">
+        ${DIFERENCIAL_LEUCOCITOS.map((k) => `
+          <div>
+            <label class="diferencial-rotulo" for="${idPrefix}-${k}">${LAB_LABEL[k]}</label>
+            <input id="${idPrefix}-${k}" type="text" inputmode="decimal" value="${valor(k)}"${oninput}>
+          </div>`).join('')}
+      </div>
     </div>
   `;
 }
-// Lê as 6 caixas do diferencial (por id-prefix) e devolve só as preenchidas
-// e numéricas — usado tanto ao criar quanto ao editar um exame.
+// Lê o total de leucócitos + as 6 caixas do diferencial (por id-prefix) e
+// devolve só as preenchidas e numéricas — usado tanto ao criar quanto ao
+// editar um exame.
 function lerDiferencialLeucocitos(idPrefix) {
   const achados = {};
-  for (const k of DIFERENCIAL_LEUCOCITOS) {
+  for (const k of ['leuco', ...DIFERENCIAL_LEUCOCITOS]) {
     const el = document.getElementById(`${idPrefix}-${k}`);
     const texto = el ? el.value.trim() : '';
     if (!texto) continue;
@@ -1952,7 +1973,8 @@ function onAdicionarLabRascunho() {
 function viewNewExam(admissionId, categoria = 'lab') {
   labsRascunho = [];
   const camposLab = `
-    <div class="section-title">Labs rápidos</div>
+    ${htmlDiferencialLeucocitos('dif')}
+    <div class="section-title">Outros labs</div>
     <div class="card">
       <div id="labs-rascunho-lista">${htmlListaLabsRascunho()}</div>
       <div class="grid2" style="margin-top:10px">
@@ -1961,7 +1983,6 @@ function viewNewExam(admissionId, categoria = 'lab') {
       </div>
       <button class="btn btn-secondary" style="margin-top:10px" onclick="onAdicionarLabRascunho()">Adicionar</button>
     </div>
-    ${htmlDiferencialLeucocitos('dif')}
     <label style="margin-top:14px">Resumo / demais exames</label>
     <textarea id="e-resumo" placeholder="Envolva um trecho com ==assim== pra destacar"></textarea>
   `;
